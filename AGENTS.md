@@ -1,6 +1,6 @@
 # AGENTS.md — mard 工作区说明
 
-拼豆（perler bead）图片转图纸工具。**P0 为纯前端、零构建**：转换链路全在单文件 `拼豆转换器.html`（原生 JS）里，双击浏览器即用。**P1 已落地**：新增裁剪 / 抠图 / 包边 / 逐格改色四项精修，其中**只有抠图走后端**（`backend/`，确定性 CV，不是生成式模型；依据见技术方案 §0.5.5），其余三项都是前端纯数组运算。
+拼豆（perler bead）图片转图纸工具。**P0 为纯前端、零构建**：转换链路是原生 JS，入口 `拼豆转换器.html` + `css/style.css` + `js/` 下按功能域拆分的经典 `<script>` 文件（无 ES Module——file:// 下被 CORS 拦截，无构建工具），双击浏览器即用。**JS 文件按加载顺序**：palette → algorithm → render → state → ui-core → refine-crop → refine-cutout → refine-edit → init（顺序不能乱，init 必须最后）。**P1 已落地**：新增裁剪 / 抠图 / 包边 / 逐格改色四项精修，其中**只有抠图走后端**（`backend/`，确定性 CV，不是生成式模型；依据见技术方案 §0.5.5），其余三项都是前端纯数组运算。
 
 > **红线仍在**：P0 的验收基线（`test.jpg` @ 78×78 / 24 色）不得依赖任何网络请求。抠图服务连不上时，裁剪、包边、改色、导出必须全部照常可用。
 
@@ -8,7 +8,17 @@
 
 | 文件 | 作用 |
 |---|---|
-| `拼豆转换器.html` | **前端唯一交付物**。CSS 设计令牌 + 调色板数据 + 算法 + UI + P1 精修全部在这一个文件里 |
+| `拼豆转换器.html` | **前端入口**。纯 HTML 骨架（约 270 行）+ `<link>` 引样式 + 按依赖序引 9 个 JS。改 UI 结构在这里 |
+| `css/style.css` | 全部样式：设计令牌（`:root`）、布局、精修工具条、响应式（18 个分节注释） |
+| `js/palette.js` | `PALETTE_RAW` 色卡数据 + OKLab 色彩空间（`rgbToOklab` / `dEok`）。改色卡同步链的第一落点 |
+| `js/algorithm.js` | 量化核心：`workRect` / `analyzeMaster` / `downsampleByMode` / `unifyFlatRegions` / 引导滤波 / 择优 / `computeEdgeLayer` / `gridMetrics` |
+| `js/render.js` | 渲染：A 网格图纸 + B 色卡集合版 + 用量清单 + 包边自测 |
+| `js/state.js` | 全局状态与流水线：`runToken` / `refine` / 蒙版存取 / manual 覆盖层 / `effectiveCells` / 历史栈 / draft 生命周期 / `drawState` |
+| `js/ui-core.js` | 上传（点击/拖拽/粘贴）+ 参数控件绑定 |
+| `js/refine-crop.js` | 精修 6.1-6.3：模式切换 / 视口缩放平移 / 裁剪 |
+| `js/refine-cutout.js` | 精修 6.4：抠图（`CUTOUT_URL`、fetch 后端、笔刷、蒙版叠加） |
+| `js/refine-edit.js` | 精修 6.5-6.7：包边 / 逐格改色 / Esc 守卫 / 编辑条 |
+| `js/init.js` | 5.4 视口变化 + 5.5 初始化。**必须最后加载** |
 | `backend/cutout.py` | **确定性 CV 抠图引擎**。改之前必读文件顶部注释：`cv2.grabCut` 实测不可复现，已弃用 |
 | `backend/app.py` | FastAPI 服务。接口只有 `/health` `/cutout` `/matting`，只做抠图 |
 | `backend/test_cutout.py` | 11 项回归测试。`TestDeterminism` 是确定性契约的护栏，必须保持绿色 |
@@ -26,7 +36,7 @@
 色卡在两处硬编码，必须同步修改，缺一即静默出错：
 
 1. `code.md`（数据源）
-2. `拼豆转换器.html` 中的 `PALETTE_RAW` 常量（`色号:HEX,色号:HEX,...` 逗号分隔串，无 `#` 前缀）
+2. `js/palette.js` 中的 `PALETTE_RAW` 常量（`色号:HEX,色号:HEX,...` 逗号分隔串，无 `#` 前缀）。**每个 js 文件顶部都有独立的 `"use strict";`，新增文件别忘了带**
 
 改完跑 `python3 palette-audit.py code.md`，对比技术方案附录 A 的近重复色指标确认无回归。
 
