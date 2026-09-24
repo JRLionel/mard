@@ -26,7 +26,7 @@
 const PW = '/Users/zuorongkun/.npm-global/lib/node_modules/@playwright/cli/node_modules/playwright-core/index.js';
 const EXE = '/Users/zuorongkun/Library/Caches/ms-playwright/chromium-1148/chrome-mac/Chromium.app/Contents/MacOS/Chromium';
 const HTML = 'file:///Volumes/samsungt7/code/mard/拼豆转换器.html';
-const TESTJPG = '/Volumes/samsungt7/code/mard/test/test.jpg';
+const TESTJPG = process.env.MARD_TEST_IMG || '/Volumes/samsungt7/code/mard/test/test.jpg';
 const fs = require('fs');
 
 const results = [];
@@ -46,14 +46,17 @@ function check(id, desc, ok, detail) {
   page.on('dialog', async d => { await d.accept(); });   // 默认全部同意
 
   const ev = (fn, a) => page.evaluate(fn, a);
-  const idle = () => page.waitForFunction(() => !running && document.getElementById('stext').textContent.includes('完成'), { timeout: 60000 });
+  const idle = () => page.waitForFunction(() => !running && document.getElementById('stext').textContent.includes('完成'), null, { timeout: 60000 });
   const settle = async () => { await idle(); await page.waitForTimeout(150); };
   const esc = () => ev(() => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
 
   await page.goto(HTML);
   await page.waitForTimeout(600);
   await page.setInputFiles('#file', TESTJPG);
-  await page.waitForFunction(() => document.getElementById('info').textContent.includes('test.jpg'), { timeout: 20000 });
+  // 等缩略图就绪：按实际素材名判（样例路径可用 MARD_TEST_IMG 覆盖，不再写死 test.jpg）
+  await page.waitForFunction(
+    n => document.getElementById('info').textContent.includes(n),
+    require('path').basename(TESTJPG), { timeout: 20000 });
   await page.click('#run');
   await idle();
   await ev(() => { document.getElementById('fxwrap').open = true; });
@@ -74,7 +77,7 @@ function check(id, desc, ok, detail) {
   });
   fs.writeFileSync('/tmp/p1_contract.png', Buffer.from(syntheticB64, 'base64'));
   await page.setInputFiles('#file', '/tmp/p1_contract.png');
-  await page.waitForFunction(() => /1200×600 px/.test(document.getElementById('info').textContent), { timeout: 30000 });
+  await page.waitForFunction(() => /1200×600 px/.test(document.getElementById('info').textContent), null, { timeout: 30000 });
   await page.click('#run'); await settle();
   await page.click('#tools button[data-tool="matt"]');
   await page.waitForTimeout(500);
@@ -136,7 +139,9 @@ function check(id, desc, ok, detail) {
   // 清场：回 test.jpg
   await ev(() => { draftReset(); refine.crop = null; refine.cropPendingCrop = null; clearMask(); masterSig = ''; });
   await page.setInputFiles('#file', TESTJPG);
-  await page.waitForFunction(() => document.getElementById('info').textContent.includes('test.jpg'), { timeout: 30000 });
+  await page.waitForFunction(
+    n => document.getElementById('info').textContent.includes(n),
+    require('path').basename(TESTJPG), { timeout: 30000 });
   await settle();
   await ev(() => { document.getElementById('fxwrap').open = true; });
 
@@ -189,7 +194,7 @@ function check(id, desc, ok, detail) {
     /不进入图纸/.test(noteTxt) && !/留白/.test(noteTxt));
   // 取消：改动丢弃
   await esc();
-  await page.waitForFunction(() => refine.mode === 'none', { timeout: 5000 });
+  await page.waitForFunction(() => refine.mode === 'none', null, { timeout: 5000 });
   check('9.1d', 'Esc 取消：裁剪改动丢弃（crop 未被写入）', await ev(() => refine.crop === null));
   // 确认路径：1:1 裁剪生效 + 工作区更新
   await page.click('#tools button[data-tool="crop"]');
@@ -275,7 +280,7 @@ function check(id, desc, ok, detail) {
   // 确认：写历史、退出、蒙版保留
   const h0 = await ev(() => histPos);
   await page.click('#editbar [data-a="confirm"]');
-  await page.waitForFunction(() => refine.mode === 'none', { timeout: 5000 });
+  await page.waitForFunction(() => refine.mode === 'none', null, { timeout: 5000 });
   await settle();
   const mattConfirmed = await ev(() => ({ h: histPos, mask: !!refine.mask, m: window.MARD_SELFEVAL() }));
   check('5.1d', '确认抠图：写历史（+1）、蒙版生效、退出编辑态',
@@ -286,7 +291,7 @@ function check(id, desc, ok, detail) {
   const keptBefore = await ev(() => maskKeptCount());
   await ev(() => { refine.mask[0] = refine.mask[0] ? 0 : 1; });   // 制造未确认改动
   await esc();
-  await page.waitForFunction(() => refine.mode === 'none', { timeout: 5000 });
+  await page.waitForFunction(() => refine.mode === 'none', null, { timeout: 5000 });
   await settle();
   const keptAfter = await ev(() => maskKeptCount());
   check('5.1e', '取消笔刷改动：蒙版回到确认时状态', keptAfter === keptBefore, keptBefore + ' → ' + keptAfter);
@@ -323,7 +328,7 @@ function check(id, desc, ok, detail) {
     '包边 ' + edgePrev.c.edgeCells + ' 格 hist=' + edgePrev.h);
   check('6.1c', '包边闭合（连通块 = 1，细缝无断点）', edgePrev.c.blocks === 1, 'blocks=' + edgePrev.c.blocks);
   await page.click('#editbar [data-a="confirm"]');
-  await page.waitForFunction(() => refine.mode === 'none', { timeout: 5000 });
+  await page.waitForFunction(() => refine.mode === 'none', null, { timeout: 5000 });
   await settle();
   const edgeOk = await ev(() => ({ h: histPos, m: window.MARD_SELFEVAL() }));
   check('6.1d', '确认包边：写历史 + 用量计入', edgeOk.h === hEdge0 + 1 && edgeOk.m.edgeCells > 0, 'hist→' + edgeOk.h + ' 包边 ' + edgeOk.m.edgeCells + ' 格');
@@ -421,7 +426,7 @@ function check(id, desc, ok, detail) {
   check('7.1d', '替换后实时生效 + 未确认虚线标记', afterApply.m - mBase === 49 && afterApply.marked,
     'manual ' + mBase + '→' + afterApply.m);
   await page.click('#editbar [data-a="cancel"]');
-  await page.waitForFunction(() => refine.mode === 'none', { timeout: 5000 });
+  await page.waitForFunction(() => refine.mode === 'none', null, { timeout: 5000 });
   await settle();
   check('7.1e', '取消整轮改色：manual 回退', await ev(() => countManual()) === mBase);
   // 会话确认：替换 → 确认 → 历史 +1
@@ -436,7 +441,7 @@ function check(id, desc, ok, detail) {
   await settle();
   const hEdit0 = await ev(() => histPos);
   await page.click('#editbar [data-a="confirm"]');
-  await page.waitForFunction(() => refine.mode === 'none', { timeout: 5000 });
+  await page.waitForFunction(() => refine.mode === 'none', null, { timeout: 5000 });
   await settle();
   check('7.2a', '确认改色：写历史（一轮会话一次）', await ev(() => histPos) === hEdit0 + 1);
   // 撤销 / 重做（确认态的操作）
@@ -474,7 +479,7 @@ function check(id, desc, ok, detail) {
   check('7.1i', '同色全选', sameN > 0, sameN + ' 格');
   // 重置
   await page.click('#editbar [data-a="confirm"]');   // 先确认掉这轮（清选中）
-  await page.waitForFunction(() => refine.mode === 'none', { timeout: 5000 });
+  await page.waitForFunction(() => refine.mode === 'none', null, { timeout: 5000 });
   await settle();
   await page.click('#resetAll');
   await settle();
@@ -554,7 +559,7 @@ function check(id, desc, ok, detail) {
   check('3.2a', '连续切参以最新为准（代次守卫）', deb.delta >= 1 && deb.finalN === 24, 'runToken +' + deb.delta);
   // 换图清空精修
   await page.setInputFiles('#file', '/Volumes/samsungt7/code/mard/test/IMG_5051.JPG');
-  await page.waitForFunction(() => document.getElementById('info').textContent.includes('IMG_5051'), { timeout: 30000 });
+  await page.waitForFunction(() => document.getElementById('info').textContent.includes('IMG_5051'), null, { timeout: 30000 });
   await settle();
   const newImg = await ev(() => ({ m: window.MARD_SELFEVAL(), crop: refine.crop, mask: !!refine.mask, edge: refine.edge }));
   check('1.2a', '换图后精修状态全部清空', newImg.crop === null && newImg.mask === false && newImg.edge === -1 && newImg.m.manualCells === 0);
@@ -562,7 +567,9 @@ function check(id, desc, ok, detail) {
   // ⚠️ 换图后 lastResult 被置 null、自动重算在跑 —— 必须等它结束，
   // 否则循环里的 run() 会因 running=true 被合并进 pending 立即返回，SELFEVAL 拿到 null
   await page.setInputFiles('#file', TESTJPG);
-  await page.waitForFunction(() => document.getElementById('info').textContent.includes('test.jpg'), { timeout: 30000 });
+  await page.waitForFunction(
+    n => document.getElementById('info').textContent.includes(n),
+    require('path').basename(TESTJPG), { timeout: 30000 });
   await settle();
   const tiers = [];
   for (const [n, N] of [[52, 16], [78, 24], [104, 32]]) {

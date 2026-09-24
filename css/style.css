@@ -499,3 +499,86 @@
     @keyframes tin{from{opacity:0;transform:translateY(-14px) scale(.96)}to{opacity:1;transform:none}}
     @keyframes tout{to{opacity:0;transform:translateY(-12px) scale(.96)}}
   }
+
+  /* ===================== P2 风格化 · 选择区补充 ===================== */
+  /* 未开放的风格：虚线置灰（可点击性由 disabled 属性保证） */
+  .styles button:disabled{opacity:.5;cursor:not-allowed;border-style:dashed}
+  .styles button:disabled:hover{border-color:var(--line);box-shadow:none}
+  .styles button:disabled b{color:var(--faint)}
+
+  /* ===================== P2 风格化预览区 ===================== */
+  /* [hidden] 必须显式声明：author 的 display:flex 会盖过 UA 的 [hidden]{display:none} */
+  .p2preview[hidden],.p2prog[hidden],.stage[hidden],.compare[hidden],.p2modal[hidden],
+  #srcBadge[hidden],.cmpstale[hidden]{display:none}
+
+  .p2preview{margin-top:13px;padding:11px;border:1px solid var(--line);border-radius:var(--r-s);
+    background:var(--panel-soft);animation:rise .28s var(--ease) both}
+  .p2img{position:relative;border-radius:8px;overflow:hidden;background:#fff;border:1px solid var(--line)}
+  .p2img img{display:block;width:100%;height:auto;max-height:260px;object-fit:contain}
+  .p2badge{position:absolute;left:7px;top:7px;padding:2px 9px;border-radius:99px;font-size:10.5px;
+    font-weight:600;color:#fff;background:var(--accent);box-shadow:var(--sh-s)}
+  .p2meta{display:flex;align-items:baseline;justify-content:space-between;gap:9px;margin-top:9px}
+  .p2meta b{font-size:11.5px;font-weight:600;color:var(--ink);min-width:0;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .p2meta small{flex:0 0 auto;font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+  .p2prog{margin-top:10px}
+  .p2bar{height:5px;border-radius:99px;background:var(--line);overflow:hidden}
+  .p2bar i{display:block;height:100%;width:0;background:var(--accent);border-radius:99px;
+    transition:width .35s var(--ease)}
+  .p2prog span{display:block;margin-top:6px;font-family:var(--mono);font-size:10.5px;color:var(--muted);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .p2acts{display:flex;gap:7px;margin-top:11px}
+  .p2acts .act{flex:1;min-height:34px;font-size:12px}
+
+  /* 上传区：来源徽标（当前输入源是风格图时显示） */
+  .dz-file .srcbadge{flex:0 0 auto;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;
+    color:#fff;background:var(--accent);white-space:nowrap}
+  .drop.is-style{border-color:var(--accent);border-style:dashed}
+
+  /* ===================== P2 隐私同意模态 ===================== */
+  .p2modal{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;
+    padding:20px;background:rgba(30,28,25,.42);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+  .p2modal.show{display:flex;animation:rise .22s var(--ease) both}
+  .p2modal-card{width:min(460px,100%);padding:20px;border-radius:var(--r-m);background:var(--panel);
+    border:1px solid var(--line-strong);box-shadow:var(--sh-l)}
+  .p2modal-card h3{margin:0 0 10px;font-family:var(--serif);font-size:15px;font-weight:700;color:var(--ink)}
+  .p2modal-card p{margin:0;font-size:12px;line-height:1.75;color:var(--muted)}
+  .p2modal-card p b{color:var(--ink)}
+  .p2modal-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+  .p2modal-acts .act{width:auto;min-width:92px;min-height:36px;padding:0 16px;font-size:12.5px}
+
+  /* ===================== 视图模式切换 ===================== */
+  .viewmodes{flex:0 0 auto;display:flex;gap:4px;padding:3px;border:1px solid var(--line);
+    border-radius:99px;background:var(--panel-soft)}
+  .viewmodes button{padding:4px 12px;border:1px solid transparent;border-radius:99px;background:transparent;
+    font-size:11.5px;color:var(--muted);cursor:pointer;transition:background .15s,color .15s}
+  .viewmodes button:hover{color:var(--ink)}
+  .viewmodes button.on{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:var(--sh-s)}
+
+  /* ===================== 对比视图 ===================== */
+  .compare{flex:1 1 auto;display:flex;flex-direction:column;min-height:0}
+  .cmpbar{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:10px 18px;
+    border-bottom:1px solid var(--line);background:var(--panel-soft)}
+  .cmpsync{flex:0 0 auto;display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);cursor:pointer}
+  .cmptip{flex:1;min-width:0;font-size:11.5px;color:var(--warn);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cmpbar .act{flex:0 0 auto;width:auto;min-height:34px;padding:0 15px;font-size:12px}
+  .cmpbody{flex:1 1 auto;display:flex;gap:1px;min-height:0;background:var(--line)}
+  .cmppanel{flex:1 1 50%;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--paper)}
+  .cmppanel>header{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .cmppanel>header b{font-size:11.5px;font-weight:600;color:var(--ink);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cmpstale{flex:0 0 auto;font-size:10.5px;font-style:normal;color:var(--warn);cursor:help}
+  .cmpscroll{flex:1 1 auto;overflow:auto;min-height:0;padding:12px;overscroll-behavior:contain}
+  .cmpscroll canvas{display:block;width:100%;height:auto;background:#fff;border:1px solid var(--line);
+    border-radius:5px;box-shadow:var(--sh-s)}
+
+  /* 窄屏：对比面板上下堆叠（设计 D4） */
+  @media (max-width:960px){
+    .cmpbody{flex-direction:column}
+    .cmppanel{flex:1 1 50%}
+    .cmpbar{flex-wrap:wrap;gap:8px}
+    .cmptip{order:3;flex:1 0 100%}
+    .cmpscroll{padding:10px}
+  }

@@ -1,4 +1,11 @@
 "use strict";
+/* ============================================================
+   初始化入口
+
+   本文件只做「装配」：视口监听 + 核心控件初始化 + 各 P2 模块的 init 调用。
+   业务逻辑一律在各功能模块里（P1 精修见 refine-*.js，P2 见 p2-*.js）。
+   ============================================================ */
+
 /* ---------- 5.4 视口变化 ---------- */
 let zoomTimer = null;
 window.addEventListener("resize", function () {
@@ -11,7 +18,7 @@ window.addEventListener("resize", function () {
   }, 160);
 });
 
-/* ---------- 5.5 初始化 ---------- */
+/* ---------- 5.5 核心控件初始化 ---------- */
 fillRange($("ncolors"));
 fillRange($("thr"));
 updateSizeHint();
@@ -23,32 +30,23 @@ const pool0 = suppressNearDuplicates(PALETTE, state.thr).length;
 $("poolsz").textContent = pool0;
 $("advsum").textContent = state.thr.toFixed(3) + " → 可用 " + pool0 + " 色";
 
-/* ---------- 5.6 P2 智能转换占位（需求 E8 界面展位，后端未实现） ----------
-   只做单选交互与「未开放」提示，不触碰转换链路 —— Story 8.1 要求未选风格时
-   走原有链路、智能转换不影响基础功能。风格内置提示词属于后端契约，前端不暴露。 */
+/* ---------- 5.6 P2 模块装配（需求 E8） ----------
+   缺文件时优雅降级：只把 P2 区域标为不可用，P0/P1 全部功能不受影响。
+   这与「抠图服务连不上时其余功能照常可用」是同一条红线。 */
 (function () {
-  const box = $("p2styles"), runBtn = $("p2run");
-  if (!box || !runBtn) return;
-  let picked = null;
-  box.addEventListener("click", function (e) {
-    const b = e.target.closest("button"); if (!b) return;
-    const name = b.querySelector("b") ? b.querySelector("b").textContent : "该风格";
-    if (b.classList.contains("on")) {              // 再点一次 = 取消选择（单选可逆）
-      b.classList.remove("on");
-      picked = null;
-      runBtn.textContent = "生成风格图";
-      return;
-    }
-    Array.prototype.forEach.call(box.children, function (x) { x.classList.remove("on"); });
-    b.classList.add("on");
-    picked = { key: b.dataset.s, name: name };
-    runBtn.textContent = "生成「" + name + "」风格图";
-  });
-  runBtn.addEventListener("click", function () {
-    if (!picked) { toast("先在上方选一个风格（不选则直接用原图转换）"); return; }
-    if (!imageData) { nudge("先上传一张图片，再生成风格图"); return; }
-    /* P2 后端（模型代理）未实现：明确告知但不阻塞、不影响其它功能（Story 8.2 的失败语义） */
-    toast("「" + picked.name + "」风格化生成将在 P2 上线，当前请直接上传原图转换", "info");
-  });
-})();
+  const host = $("pmHost");
+  if (host) host.textContent = CUTOUT_URL.replace(/^https?:\/\//, "");
 
+  let ok = true;
+  if (window.P2Style && typeof P2Style.init === "function") P2Style.init();
+  else ok = false;
+  if (window.P2Compare && typeof P2Compare.init === "function") P2Compare.init();
+  else ok = false;
+
+  if (!ok) {
+    const hint = $("p2hint");
+    if (hint) hint.textContent = "智能转换模块未加载，暂不可用。上传 / 转换 / 精修 / 导出全部不受影响。";
+    const runBtn = $("p2run");
+    if (runBtn) { runBtn.disabled = true; runBtn.textContent = "智能转换暂不可用"; }
+  }
+})();
