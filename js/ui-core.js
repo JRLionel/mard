@@ -115,8 +115,38 @@ $("grids").addEventListener("click", function (e) {
    无守卫的先注册先执行，state.N 已被改掉、run() 已跑，用户即使在后面的
    confirm 里点「取消」，参数也回不来了 —— 守卫被完全架空。
    修法：只保留带守卫的那一个（见下方）。 */
+/* 参数滑杆的丢弃守卫：必须在**值变化前**拦（pointerdown 拦拖动、input 拦键盘），
+   事后确认是无效的 —— 防抖 run 早已把新参数算进去了，用户点「取消」参数也回不来。
+   曾只绑 pointerdown：键盘方向键改值不触发它，已有精修成果会被静默丢弃（违反 G2）。
+   _ok 是「本次手势已确认过」的记号：pointerdown / 键盘导航键把它重置，
+   一段手势里只问一次；键盘手势之间各自独立。 */
+function guardSlider(id, name, revert) {
+  const el = $(id);
+  el._ok = null;
+  el.addEventListener("pointerdown", function (e) {
+    el._ok = null;
+    if (!imageData || !refineDirty()) return;
+    if (invalidateRefine(name)) el._ok = true;
+    else { el._ok = false; e.preventDefault(); }     // 拒绝：滑杆拖不动
+  });
+  el.addEventListener("keydown", function (e) {
+    if (/^(Arrow|Home|End|Page)/.test(e.key)) el._ok = null;
+  });
+  return function () {                 // input 事件开头调用；false = 本次改动被拒、已回退
+    if (el._ok === false) { revert(el); return false; }
+    if (el._ok !== true && imageData && refineDirty()) {
+      if (!invalidateRefine(name)) { el._ok = false; revert(el); return false; }
+      el._ok = true;
+    }
+    return true;
+  };
+}
+const ncolorsGuard = guardSlider("ncolors", "色数", function (el) { el.value = state.N; fillRange(el); });
+const thrGuard = guardSlider("thr", "色号间距", function (el) { el.value = Math.round(state.thr * 1000); fillRange(el); });
+
 let nTimer = null;
 $("ncolors").addEventListener("input", function () {
+  if (!ncolorsGuard()) return;
   const n = +this.value;
   state.N = n;
   $("nval").textContent = n;
@@ -130,14 +160,6 @@ $("ncolors").addEventListener("input", function () {
   // Story 3.2：防抖 260ms，避免拖动过程中每一帧都触发一次完整重算；
   // 真正的时间正确性由 run() 里的 runToken 代次守卫保证（旧结果一律丢弃）
   if (imageData) nTimer = setTimeout(run, 260);
-});
-/* 参数滑杆的守卫必须在**拖动开始前**（pointerdown）拦 —— 事后确认是无效的：
-   防抖 run 早已把新参数算进去了。用户拒绝时 preventDefault，滑杆拖不动。 */
-["ncolors", "thr"].forEach(function (id) {
-  $(id).addEventListener("pointerdown", function (e) {
-    if (!imageData) return;
-    if (!invalidateRefine(id === "ncolors" ? "色数" : "色号间距")) e.preventDefault();
-  });
 });
 
 $("presets").addEventListener("click", function (e) {
@@ -161,6 +183,7 @@ function confirmDiscardOnParam() {
 
 let tTimer = null;
 $("thr").addEventListener("input", function () {
+  if (!thrGuard()) return;
   state.thr = +this.value / 1000;
   $("thrval").textContent = state.thr.toFixed(3);
   fillRange(this);

@@ -327,14 +327,21 @@ function draftConfirm() {
   }
 }
 
+/* 当前是否存在「会因重算而被丢弃」的精修成果（供参数守卫共用） */
+function refineDirty() {
+  const hasManual = !!(refine.manual && refine.manual.some(function (v) { return v !== EMPTY; }));
+  return hasManual || refine.edge !== EMPTY || !!refine.mask ||
+    !!(draft.kind && draftChanged());
+}
+
 /* 4.3 关键：任何会改变自动结果的操作，都必须把精修层作废并告知用户。
    需求矛盾表第 6 条与假设 7 明确要求「改色后切换规格/色数会丢弃手动修改并需提示」。 */
 function invalidateRefine(reason) {
+  if (!refineDirty()) return true;
   const hasManual = !!(refine.manual && refine.manual.some(function (v) { return v !== EMPTY; }));
   const hasEdge = refine.edge !== EMPTY;
   const hasMask = !!refine.mask;
   const hasDraft = !!(draft.kind && draftChanged());
-  if (!hasManual && !hasEdge && !hasMask && !hasDraft) return true;
   const what = [];
   if (hasDraft) what.push("未确认的编辑");
   if (hasManual) what.push("逐格改色");

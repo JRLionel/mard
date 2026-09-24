@@ -7,8 +7,8 @@ function buildEdgePicker() {
   for (let i = 0; i < PALETTE.length; i++) {
     const b = document.createElement("button");
     b.dataset.pi = i;
-    b.style.background = PALETTE[i].hex;
-    b.title = PALETTE[i].code + " " + PALETTE[i].hex;
+    b.style.backgroundColor = PALETTE[i].hex;   // 只设颜色：衬底棋盘格由 CSS 提供，
+    b.title = PALETTE[i].code + " " + PALETTE[i].hex;   // 否则近白色号在白底上不可见
     b.setAttribute("aria-label", "包边色 " + PALETTE[i].code);
     frag.appendChild(b);
   }
@@ -61,7 +61,7 @@ function buildEditPicker() {
   for (let i = 0; i < PALETTE.length; i++) {
     const b = document.createElement("button");
     b.dataset.pi = i;
-    b.style.background = PALETTE[i].hex;
+    b.style.backgroundColor = PALETTE[i].hex;   // 同上：棋盘格衬底在 CSS 里
     b.title = PALETTE[i].code + " " + PALETTE[i].hex;
     b.setAttribute("aria-label", "替换色 " + PALETTE[i].code);
     frag.appendChild(b);
@@ -234,6 +234,7 @@ function deselectAll() {
   buildEditBar();
 }
 function updateSelUI() {
+  if (paintMode) return;   // 连续涂色模式下提示语由 paintmode 切换处维护，不被选中逻辑覆盖
   const sel = refine.sel;
   let n = 0;
   if (sel) for (let i = 0; i < sel.length; i++) if (sel[i]) n++;

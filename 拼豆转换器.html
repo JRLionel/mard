@@ -19,6 +19,7 @@
         </div>
       </div>
 
+      <div class="shead"><i>01</i><span>上传素材</span></div>
       <div class="drop" id="drop" role="button" tabindex="0" aria-label="上传图片">
         <div class="dz-empty">
           <span class="ico" aria-hidden="true">
@@ -43,6 +44,7 @@
       <input type="file" id="file" accept="image/*" hidden>
       <p class="ready" id="ready">✓ 图片已载入，点下方「生成图纸」</p>
 
+      <div class="shead"><i>02</i><span>规格与色数</span></div>
       <div class="group">
         <div class="glabel"><span>网格规格</span><span class="hint" id="sizeHint">成品 20.3 cm 见方</span></div>
         <div class="seg" id="grids" role="group" aria-label="网格规格">
@@ -124,7 +126,7 @@
             <div class="pbtns">
               <button id="cropClear">恢复完整图</button>
             </div>
-            <p class="note">裁剪**不修改原图**，随时可重新进入调整或一键恢复。图纸是正方形：不是 1:1 时，取框内<b>居中最大正方形</b>参与图纸，<strong>长边两侧的内容不会进入图纸</strong>（不拉伸；裁剪时画布上的虚线框就是实际取用范围）。想用满整个框就选 <b>1:1</b>。</p>
+            <p class="note">裁剪<b>不修改原图</b>，随时可重新进入调整或一键恢复。图纸是正方形：不是 1:1 时，取框内<b>居中最大正方形</b>参与图纸，<strong>长边两侧的内容不会进入图纸</strong>（不拉伸；裁剪时画布上的虚线框就是实际取用范围）。想用满整个框就选 <b>1:1</b>。</p>
           </div>
 
           <!-- 抠图面板 -->
@@ -195,6 +197,27 @@
             <button id="resetAll" disabled>重置</button>
           </div>
           <p class="note" id="histnote">历史保留最近 20 步（对「已确认」的精修生效）。切换规格 / 色数 / 色号间距会<strong>丢弃全部手动修改</strong>并重算，届时会先提示。</p>
+        </div>
+      </details>
+
+      <!-- ============ P2 智能转换（仅界面占位，后端未实现） ============ -->
+      <details class="adv" id="p2wrap">
+        <summary>
+          <span>智能转换 · 风格化</span>
+          <em class="badge-soon">P2 预览</em>
+        </summary>
+        <div class="group" style="margin-top:13px">
+          <p class="note">选择一个风格，由后端模型把原图生成风格化图片，作为<b>新的转换输入源</b>（不覆盖原图，可回退）；生成后仍走完整链路：规格 / 色数 / 裁剪 / 抠图 / 包边 / 改色全部适用。<strong>风格化需把图片上传至服务端</strong>，请求结束即释放、不落盘。</p>
+          <div class="styles" id="p2styles" role="group" aria-label="选择风格">
+            <button data-s="pixel"><i class="dot d1"></i><b>像素风</b><span>怀旧游戏质感</span></button>
+            <button data-s="oil"><i class="dot d2"></i><b>油画风</b><span>厚涂笔触肌理</span></button>
+            <button data-s="flat"><i class="dot d3"></i><b>扁平插画风</b><span>色块干净边缘锐利</span></button>
+            <button data-s="water"><i class="dot d4"></i><b>水彩风</b><span>淡彩晕染过渡</span></button>
+          </div>
+          <div class="pbtns">
+            <button class="primary" id="p2run">生成风格图</button>
+          </div>
+          <p class="note">当前版本仅开放界面预览，生成能力随 P2 上线；不选风格则始终走原有转换链路，智能转换不影响基础功能。</p>
         </div>
       </details>
 
