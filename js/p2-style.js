@@ -35,7 +35,9 @@ window.P2Style = (function () {
     return {
       crop: null, cropPendingCrop: null,
       mask: null, _maskRect: null,
-      edge: EMPTY, manual: null, _manualT: 0, sel: null
+      edge: EMPTY, manual: null, _manualT: 0, sel: null,
+      outlineOn: false, outlineColor: OUTLINE_DEFAULT_COLOR,
+      _outlineCells: null, _outlineSig: ""
     };
   }
   function capture() {
@@ -49,7 +51,9 @@ window.P2Style = (function () {
       params: { target: state.target, N: state.N },
       refine: {
         crop: refine.crop, mask: refine.mask, _maskRect: refine._maskRect,
-        edge: refine.edge, manual: refine.manual, _manualT: refine._manualT, sel: refine.sel
+        edge: refine.edge, manual: refine.manual, _manualT: refine._manualT, sel: refine.sel,
+        outlineOn: refine.outlineOn, outlineColor: refine.outlineColor,
+        _outlineCells: refine._outlineCells, _outlineSig: refine._outlineSig
       }
     };
   }
@@ -63,6 +67,10 @@ window.P2Style = (function () {
     refine.mask = r.mask; refine._maskRect = r._maskRect;
     refine.edge = r.edge; refine.manual = r.manual; refine._manualT = r._manualT;
     refine.sel = r.sel;
+    refine.outlineOn = !!r.outlineOn;
+    refine.outlineColor = r.outlineColor === undefined ? OUTLINE_DEFAULT_COLOR : r.outlineColor;
+    refine._outlineCells = r._outlineCells || null;
+    refine._outlineSig = r._outlineSig || "";
     draftReset();
   }
   function freshStyleSession() {
@@ -163,6 +171,34 @@ window.P2Style = (function () {
       const onKey = function (e) { if (e.key === "Escape") { e.stopPropagation(); done(false); } };
       $("pmOk").addEventListener("click", onOk);
       $("pmCancel").addEventListener("click", onCancel);
+      document.addEventListener("keydown", onKey, true);
+    });
+  }
+
+  /* ---------- 自定义提示词弹窗（点击「自定义」时，需求 Story 8.1） ----------
+     返回 Promise：确认得到提示词文本（非空由调用方校验），取消 / Esc 得到 null。 */
+  function askCustomPrompt(initial) {
+    const modal = $("customModal");
+    if (!modal) return Promise.resolve(null);          // 结构缺失时不拦路
+    const ta = $("cmPrompt");
+    if (ta) ta.value = initial || "";
+    return new Promise(function (resolve) {
+      modal.hidden = false;
+      modal.classList.add("show");
+      if (ta) ta.focus();
+      const done = function (text) {
+        modal.classList.remove("show");
+        modal.hidden = true;
+        $("cmOk").removeEventListener("click", onOk);
+        $("cmCancel").removeEventListener("click", onCancel);
+        document.removeEventListener("keydown", onKey, true);
+        resolve(text);
+      };
+      const onOk = function () { done((($("cmPrompt").value) || "").trim()); };
+      const onCancel = function () { done(null); };
+      const onKey = function (e) { if (e.key === "Escape") { e.stopPropagation(); done(null); } };
+      $("cmOk").addEventListener("click", onOk);
+      $("cmCancel").addEventListener("click", onCancel);
       document.addEventListener("keydown", onKey, true);
     });
   }
@@ -286,6 +322,7 @@ window.P2Style = (function () {
       const fd = new FormData();
       fd.append("file", blob, "source.png");
       fd.append("style", picked.key);
+      if (picked.prompt) fd.append("prompt", picked.prompt);   // 自定义：带上用户提示词
 
       const resp = await fetchWithTimeout(CUTOUT_URL + "/style-transfer",
         { method: "POST", body: fd }, 70000);
@@ -349,13 +386,37 @@ window.P2Style = (function () {
   }
 
   /* ---------- 风格选择 ---------- */
+  function markPicked(btn) {
+    const box = $("p2styles");
+    if (box) Array.prototype.forEach.call(box.children, function (x) {
+      x.classList.remove("on");
+      x.setAttribute("aria-pressed", "false");
+    });
+    btn.classList.add("on");
+    btn.setAttribute("aria-pressed", "true");
+  }
+
+  /* 自定义：先弹窗取提示词，确认后选中并直接生成（提示词随请求发送，见 generate） */
+  async function pickCustom(btn) {
+    if (running) return;
+    if (!imageData) { nudge("先上传一张图片，再生成风格图"); return; }
+    const text = await askCustomPrompt(picked && picked.key === "custom" ? picked.prompt : "");
+    if (text === null) return;                        // 取消：不改选中态、不生成
+    if (!text) { toast("请先填写提示词，再点生成", "info"); return; }
+    markPicked(btn);
+    picked = { key: "custom", name: "自定义", prompt: text };
+    refreshUI();
+    generate();                                       // 输入完直接生成（隐私同意在 generate 内）
+  }
+
   function bindStyles() {
     const box = $("p2styles");
     if (!box) return;
     box.addEventListener("click", function (e) {
       const b = e.target.closest("button");
       if (!b || b.disabled) return;
-      const name = b.querySelector("b") ? b.querySelector("b").textContent : "该风格";
+      const key = b.dataset.s;
+      if (key === "custom") { pickCustom(b); return; }
       if (b.classList.contains("on")) {              // 再点一次 = 取消（单选可逆）
         b.classList.remove("on");
         b.setAttribute("aria-pressed", "false");
@@ -363,13 +424,9 @@ window.P2Style = (function () {
         refreshUI();
         return;
       }
-      Array.prototype.forEach.call(box.children, function (x) {
-        x.classList.remove("on");
-        x.setAttribute("aria-pressed", "false");
-      });
-      b.classList.add("on");
-      b.setAttribute("aria-pressed", "true");
-      picked = { key: b.dataset.s, name: name };
+      markPicked(b);
+      const name = b.querySelector("b") ? b.querySelector("b").textContent : "该风格";
+      picked = { key: key, name: name };
       refreshUI();
     });
   }

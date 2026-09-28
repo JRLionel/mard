@@ -129,19 +129,43 @@ function render(cells, target, layer, sel, ctx, opts) {
   }
   ctx.stroke();
 
-  // 每 10 格一条参考线（方便数格子）
-  ctx.strokeStyle = "rgba(0,0,0,.42)";
-  ctx.lineWidth = Math.max(2, Math.round(2 * S));
-  ctx.beginPath();
-  for (let x = 10; x < target; x += 10) {
-    const px = gx0 + x * cell + 0.5;
-    ctx.moveTo(px, gy0); ctx.lineTo(px, gy0 + gridPx);
+  // 每 10 格一条参考线（方便数格子）：四周先空出对称边距（52→空 1 格、
+  // 78→空 4 格、104→空 2 格），分段即为 1、10、…、10、1：边界在
+  // gm、gm+10、…、gLast 处（含最外侧两条边界线）。
+  // 辅助线贯穿整张网格——每条线从一边的外框一直画到对边外框，越过边距带；
+  // 每段的第 5 格位置再用浅色虚线作半程参照（实线与虚线延伸范围一致）。
+  const gm = Math.floor((target % 10) / 2);      // 对称边距（格数）
+  const gLast = target - gm;                     // 最外一条辅助线的边界位置
+  function drawGuide(dir) {
+    if (target < 10) return;
+    const lo = 0, hi = gridPx;                   // 贯穿整张网格（0 → target 格）
+    const xAt = (g) => gx0 + (dir === "x" ? g * cell : lo) + 0.5;
+    const yAt = (g) => gy0 + (dir === "x" ? lo : g * cell) + 0.5;
+    const spanTo = (g) => dir === "x"
+      ? [xAt(g), gy0 + lo, xAt(g), gy0 + hi]
+      : [gx0 + lo, yAt(g), gx0 + hi, yAt(g)];
+    ctx.lineWidth = Math.max(2, Math.round(2 * S));
+    ctx.strokeStyle = "#000000";
+    ctx.beginPath();
+    for (let g = gm; g <= gLast; g += 10) {
+      const s = spanTo(g);
+      ctx.moveTo(s[0], s[1]); ctx.lineTo(s[2], s[3]);
+    }
+    ctx.stroke();
+    ctx.save();
+    ctx.lineWidth = Math.max(1, Math.round(1.4 * S));
+    ctx.strokeStyle = "rgba(0,0,0,.28)";
+    ctx.setLineDash([5 * S, 4 * S]);
+    ctx.beginPath();
+    for (let g = gm + 5; g < gLast; g += 10) {
+      const s = spanTo(g);
+      ctx.moveTo(s[0], s[1]); ctx.lineTo(s[2], s[3]);
+    }
+    ctx.stroke();
+    ctx.restore();
   }
-  for (let y = 10; y < target; y += 10) {
-    const py = gy0 + y * cell + 0.5;
-    ctx.moveTo(gx0, py); ctx.lineTo(gx0 + gridPx, py);
-  }
-  ctx.stroke();
+  drawGuide("x");
+  drawGuide("y");
 
   // 选中高亮（仅预览）：朱红描边 + 半透明填充，保证压在任意豆色上都看得见
   if (sel) {
@@ -279,6 +303,10 @@ window.MARD_SELFEVAL = function () {
     blackCells: blackCells,
     edgeCells: r.meta.usage.edge,
     edgeColor: refine.edge === EMPTY ? null : PALETTE[refine.edge].code,
+    outline: refine.outlineOn ? {
+      color: PALETTE[refine.outlineColor].code,
+      cells: refine._outlineCells ? refine._outlineCells.reduce(function (a, b) { return a + b; }, 0) : 0
+    } : null,
     crop: refine.crop ? { x: refine.crop.x, y: refine.crop.y, w: refine.crop.w, h: refine.crop.h } : null,
     hasMask: !!refine.mask,
     manualCells: countManual(),
@@ -286,6 +314,14 @@ window.MARD_SELFEVAL = function () {
     p90: +m.p90.toFixed(4),
     max: +m.max.toFixed(4),
     frag: +m.frag.toFixed(4),
+    struct: r.struct ? {
+      edgeRecall: +r.struct.edgeRecall.toFixed(4),
+      edgeExtra: +r.struct.edgeExtra.toFixed(4),
+      featRecall: +r.struct.featRecall.toFixed(4),
+      srcEdges: r.struct.srcEdges,
+      outEdges: r.struct.outEdges,
+      feats: r.struct.feats
+    } : null,
     consistency: lastConsist,
     canvasW: cv.width,
     canvasH: cv.height,

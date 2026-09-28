@@ -52,6 +52,49 @@ function updateEdgeSwatch() {
   updateFxSum();
 }
 
+/* ---------- 6.5b A3 勾线（内部轮廓线） ----------
+   交互与包边一致：点色板 = 开启并选色（再点同一色 = 关闭），预览实时更新、
+   「确认」才写历史。与包边的差别只在落点：包边画主体外侧，勾线盖图纸内部。 */
+function buildLinePicker() {
+  const box = $("linepick");
+  if (box.children.length) return;
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < PALETTE.length; i++) {
+    const b = document.createElement("button");
+    b.dataset.pi = i;
+    b.style.backgroundColor = PALETTE[i].hex;
+    b.title = PALETTE[i].code + " " + PALETTE[i].hex;
+    b.setAttribute("aria-label", "勾线色 " + PALETTE[i].code);
+    frag.appendChild(b);
+  }
+  box.appendChild(frag);
+}
+buildLinePicker();
+$("linepick").addEventListener("click", function (e) {
+  const b = e.target.closest("button"); if (!b) return;
+  const pi = +b.dataset.pi;
+  if (refine.outlineOn && refine.outlineColor === pi) {
+    refine.outlineOn = false;                       // 再点同一色 = 关闭勾线
+    toast("已关闭勾线");
+  } else {
+    refine.outlineOn = true;
+    refine.outlineColor = pi;
+  }
+  updateLineSwatch(); updateFxSum(); updateInfo();
+  if (lastResult) run();
+});
+function updateLineSwatch() {
+  const on = refine.outlineOn;
+  $("linesw").style.background = on ? PALETTE[refine.outlineColor].hex : "#fff";
+  $("linecode").textContent = on
+    ? PALETTE[refine.outlineColor].code + " " + PALETTE[refine.outlineColor].hex
+    : "未选";
+  Array.prototype.forEach.call($("linepick").children, function (x) {
+    x.classList.toggle("on", on && +x.dataset.pi === refine.outlineColor);
+  });
+  updateFxSum();
+}
+
 /* ---------- 6.6 E7 改色 ---------- */
 buildEditPicker();
 function buildEditPicker() {
@@ -396,6 +439,13 @@ function buildEditBar() {
       '<button data-a="cancel">取消</button>' +
       '<button data-a="confirm" class="solid">确认</button>';
   }
+  if (refine.mode === "line") {
+    editbar.innerHTML =
+      '<span>选勾线色，预览即时更新（确认后生效）</span>' +
+      '<span class="sep"></span>' +
+      '<button data-a="cancel">取消</button>' +
+      '<button data-a="confirm" class="solid">确认</button>';
+  }
 }
 $("undo").addEventListener("click", undo);
 $("redo").addEventListener("click", redo);
@@ -405,6 +455,7 @@ $("resetAll").addEventListener("click", function () {
   const oldRect = workRect();
   refine.manual = null; refine._manualT = 0;
   refine.edge = EMPTY;
+  refine.outlineOn = false;
   refine.crop = null; refine.cropPendingCrop = null;
   refine.sel = null;
   // 蒙版算「抠图结果」而非「手动修改」（Story 7.2 说的是丢弃手动修改），重置保留它；

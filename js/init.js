@@ -21,14 +21,14 @@ window.addEventListener("resize", function () {
 /* ---------- 5.5 核心控件初始化 ---------- */
 fillRange($("ncolors"));
 fillRange($("thr"));
+fillRange($("dither"));
 updateSizeHint();
 updateInfo();
 updateEdgeSwatch();
+updateLineSwatch();
 updateHistUI();
 updateFxGates();
-const pool0 = suppressNearDuplicates(PALETTE, state.thr).length;
-$("poolsz").textContent = pool0;
-$("advsum").textContent = state.thr.toFixed(3) + " → 可用 " + pool0 + " 色";
+updateAdvSum();
 
 /* ---------- 5.6 P2 模块装配（需求 E8） ----------
    缺文件时优雅降级：只把 P2 区域标为不可用，P0/P1 全部功能不受影响。

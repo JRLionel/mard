@@ -38,12 +38,14 @@ backend/
 ```
 POST /style-transfer
   file   : 原图（multipart）
-  style  : 风格 key，仅接受 config.STYLE_ENABLED 内的值（当前只有 flat）
+  style  : 风格 key，仅接受 config.STYLE_ENABLED 内的值（flat / pixel / bead / custom）
+  prompt : 提示词覆盖；custom 必填（用户在弹窗里输入），内置风格留空用服务端提示词
 返回  : image/png 字节流
 头    : X-Style-Type（风格 key）、X-Style-Ms（本服务侧耗时）
 ```
 
-- **提示词对用户不可见**：由 `config.STYLE_PROMPTS` 内置（Story 8.1），前端只发风格 key。
+- **内置提示词对用户不可见**：由 `config.STYLE_PROMPTS` 内置（Story 8.1），前端对内置风格只发 key；
+  `custom`（自定义）例外——提示词由用户在弹窗里输入、随请求的 `prompt` 字段发送，为空则返回 400。
 - **负向提示词**：`config.STYLE_NEGATIVE_PROMPTS` 拦截「多格拼贴 / 多主体」——
   实测提示词里的「表情包」会让模型输出一整版多格贴纸合集（详见 `config.py` 的提示词红线注释）。
 - **提示词改写已关闭**（`config.STYLE_PROMPT_EXTEND = False`）：实测单次从 17–41 s 降到 6–7 s，

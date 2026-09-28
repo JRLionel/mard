@@ -187,11 +187,28 @@ $("thr").addEventListener("input", function () {
   state.thr = +this.value / 1000;
   $("thrval").textContent = state.thr.toFixed(3);
   fillRange(this);
-  const pool = suppressNearDuplicates(PALETTE, state.thr).length;
-  $("poolsz").textContent = pool;
-  $("advsum").textContent = state.thr.toFixed(3) + " → 可用 " + pool + " 色";
+  updateAdvSum();
   clearTimeout(tTimer);
   if (imageData) tTimer = setTimeout(run, 300);
+});
+
+/* A1 抖动强度（默认关）：0 = 走原「统一/滤波择优」路径，P0 基线逐比特不动 */
+function updateAdvSum() {
+  const pool = suppressNearDuplicates(PALETTE, state.thr).length;
+  $("poolsz").textContent = pool;
+  $("advsum").textContent = state.thr.toFixed(3) + " → 可用 " + pool + " 色" +
+    (state.dither ? "；抖动 " + Math.round(state.dither * 100) + "%" : "");
+}
+const dithGuard = guardSlider("dither", "抖动", function (el) { el.value = Math.round(state.dither * 100); fillRange(el); });
+let dTimer = null;
+$("dither").addEventListener("input", function () {
+  if (!dithGuard()) return;
+  state.dither = +this.value / 100;
+  $("dithval").textContent = state.dither ? Math.round(state.dither * 100) + "%" : "关";
+  fillRange(this);
+  updateAdvSum();
+  clearTimeout(dTimer);
+  if (imageData) dTimer = setTimeout(run, 300);
 });
 
 $("run").addEventListener("click", run);
@@ -213,8 +230,8 @@ function updateFxGates() {
   const generated = !!lastResult;
   Array.prototype.forEach.call($("tools").children, function (b) {
     const t = b.dataset.tool;
-    // 裁剪与抠图只需有原图；包边与改色需要有图纸（它们作用在网格上）
-    b.disabled = !has || ((t === "edge" || t === "edit") && !generated);
+    // 裁剪与抠图只需有原图；包边/勾线/改色需要有图纸（它们作用在网格上）
+    b.disabled = !has || ((t === "edge" || t === "edit" || t === "line") && !generated);
   });
   $("cropApply").disabled = !refine.cropPendingCrop;
   $("fxhint").textContent = !has
@@ -228,6 +245,7 @@ function updateFxSum() {
   if (refine.crop) bits.push("裁剪");
   if (refine.mask) bits.push("抠图");
   if (refine.edge !== EMPTY) bits.push("包边");
+  if (refine.outlineOn) bits.push("勾线");
   const n = countManual();
   if (n) bits.push("改 " + n + " 格");
   $("fxsum").textContent = bits.length ? bits.join(" · ") : "未启用";

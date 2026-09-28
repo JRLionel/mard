@@ -70,13 +70,18 @@
 
       <details class="adv" id="adv">
         <summary>
-          <span>进阶设置 · 色号最小间距</span>
+          <span>进阶设置 · 色号间距 / 抖动</span>
           <em id="advsum">0.020 → 可用 208 色</em>
         </summary>
         <div class="group" style="margin-top:13px">
           <div class="glabel"><span>阈值</span><b id="thrval">0.020</b></div>
           <input type="range" id="thr" min="0" max="50" value="20" aria-label="色号最小间距">
           <p class="note">两个色号若比这个值更接近，就只保留一个——避免图纸上出现肉眼分不出的重复色号（那意味着白买一包豆）。当前可用色 <b id="poolsz">221</b> / 221；设 0 则用满全部色号。</p>
+        </div>
+        <div class="group">
+          <div class="glabel"><span>抖动（渐变混色）</span><b id="dithval">关</b></div>
+          <input type="range" id="dither" min="0" max="100" value="0" aria-label="抖动强度">
+          <p class="note">用相邻格混色模拟中间色，天空、皮肤这类渐变会更连贯；代价是引入细密杂点（「无意义碎块」升高属预期），且不再做平坦区统一。默认关。</p>
         </div>
       </details>
 
@@ -103,6 +108,11 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round">
                 <path d="M5 5h14v14H5z"/><path d="M9 9h6v6H9z"/>
               </svg><em>包边</em>
+            </button>
+            <button data-tool="line" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.6"/>
+              </svg><em>勾线</em>
             </button>
             <button data-tool="edit" disabled>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -164,6 +174,16 @@
             <p class="note">沿主体轮廓<strong>外侧</strong>加一圈 1 格宽的豆子（凹口与细缝处会自动择优用 8 邻接补全，保证圈是闭合的）。包边色计入用量清单。手动改色优先于包边，改过的格子不会被重算覆盖。</p>
           </div>
 
+          <!-- 勾线面板（A3）：内部轮廓线，优先级 包边 > 改色 > 勾线 > 自动结果 -->
+          <div class="panel" id="p-line">
+            <div class="prow">
+              <label>勾线色</label>
+              <span class="cur-color" style="margin:0"><i id="linesw"></i><b id="linecode">未选</b></span>
+            </div>
+            <div class="swatches" id="linepick" role="group" aria-label="选择勾线颜色"></div>
+            <p class="note">从源图提取<strong>内部</strong>轮廓线（眼睛、嘴、花纹边界），用所选颜色盖在图纸上——与「包边」（主体外圈）互补。点色板开启，再点同一色关闭。手动改色的格子不会被勾线覆盖。勾线色计入用量清单。</p>
+          </div>
+
           <!-- 改色面板 -->
           <div class="panel" id="p-edit">
             <p class="note" id="editnote">图纸生成后，在右侧画布上单击格子选中，再点一次取消；拖拽框选，Shift 加选。</p>
@@ -213,10 +233,10 @@
         <div class="group" style="margin-top:13px">
           <p class="note">选一个风格，由后端模型把<b>当前图片</b>生成风格化图片，作为新的转换输入源。风格图与原图各存一套状态：切过去用它重算图纸，<b>切回来原图的裁剪 / 抠图 / 包边 / 改色原样恢复</b>。生成后仍走完整链路（规格 / 色数 / 精修全部适用）。<strong>生成需把图片上传至你本机的服务</strong>，请求结束即释放、不落盘。</p>
           <div class="styles" id="p2styles" role="group" aria-label="选择风格">
-            <button data-s="pixel" disabled aria-pressed="false"><i class="dot d1"></i><b>像素风</b><span>即将上线</span></button>
-            <button data-s="oil" disabled aria-pressed="false"><i class="dot d2"></i><b>油画风</b><span>即将上线</span></button>
             <button data-s="flat" aria-pressed="false"><i class="dot d3"></i><b>扁平插画风</b><span>色块干净边缘锐利</span></button>
-            <button data-s="water" disabled aria-pressed="false"><i class="dot d4"></i><b>水彩风</b><span>即将上线</span></button>
+            <button data-s="pixel" aria-pressed="false"><i class="dot d1"></i><b>像素风</b><span>复古像素颗粒感</span></button>
+            <button data-s="bead" aria-pressed="false"><i class="dot d5"></i><b>拼豆卡通风</b><span>16 位游戏像素·更贴图纸</span></button>
+            <button data-s="custom" aria-pressed="false"><i class="dot d2"></i><b>自定义</b><span>自己写提示词</span></button>
           </div>
           <div class="pbtns">
             <button class="primary" id="p2run" disabled>生成风格图</button>
@@ -340,6 +360,19 @@
     <div class="p2modal-acts">
       <button class="act" id="pmCancel">取消</button>
       <button class="act primary" id="pmOk">同意并生成</button>
+    </div>
+  </div>
+</div>
+
+<!-- 自定义风格：点击「自定义」弹出，用户自填提示词后生成 -->
+<div class="p2modal" id="customModal" hidden>
+  <div class="p2modal-card" role="dialog" aria-modal="true" aria-labelledby="cmTitle">
+    <h3 id="cmTitle">自定义风格提示词</h3>
+    <p>用一句话描述你想要的画面风格（画风、线条、配色、背景…）。生成时会把<b>当前图片</b>和这段提示词一起发往你本机运行的服务。</p>
+    <textarea id="cmPrompt" rows="5" maxlength="1000" placeholder="例如：水彩绘本风，柔和晕染，大面积留白，米色背景"></textarea>
+    <div class="p2modal-acts">
+      <button class="act" id="cmCancel">取消</button>
+      <button class="act primary" id="cmOk">生成</button>
     </div>
   </div>
 </div>

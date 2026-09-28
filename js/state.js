@@ -9,6 +9,7 @@ const $ = function (id) { return document.getElementById(id); };
 const cv = $("cv"), ctx = cv.getContext("2d");
 let imageData = null, imageName = "", imageWH = [0, 0], imageURL = "";
 let master = null, masterOk = null, masterW = null;   // 312 主网格：sRGB / OKLab / 主体占比
+let masterImp = null;                                  // A2 重要度图（梯度能量），与 master 同生命周期
 let lastResult = null;
 let running = false, pending = false, everRan = false, hintedMobile = false, showVeil = true;
 let runToken = 0;                  // 重算代次：旧代次的结果一律丢弃，杜绝旧图覆盖新图
@@ -23,6 +24,13 @@ const NARROW = "(max-width: 960px)";
               因此重算自动结果不会抹掉用户的修改；「重置」只清这一层
    历史栈存的是这些层的快照，而不是整份 cells —— 因为 cells 是可重算的派生数据，
    存它会让「撤销」在参数变化后变得不可解释。 */
+/* A3 勾线默认色：H6（#2F2B2F 近黑）。运行时查下标，不硬编码（色卡可能同步更新）。
+   必须声明在 refine 之前 —— 对象字面量求值时引用后面的 const 会命中暂时性死区。 */
+function findPaletteIdx(code) {
+  for (let i = 0; i < PALETTE.length; i++) if (PALETTE[i].code === code) return i;
+  return 0;
+}
+const OUTLINE_DEFAULT_COLOR = findPaletteIdx("H6");
 const refine = {
   crop: null,
   cropPendingCrop: null,           // 裁剪框编辑中的临时状态（未确认前不生效）
@@ -31,7 +39,12 @@ const refine = {
   edge: EMPTY,
   manual: null,                    // Int16Array(target²)
   sel: null,                       // Uint8Array(target²) 选中态
-  mode: "none"                   // none | crop | matt | edge | edit
+  mode: "none",                    // none | crop | matt | edge | edit | line
+  /* A3 勾线层：on/color 是用户意图（入历史、走 draft）；_outlineCells 是派生缓存 */
+  outlineOn: false,
+  outlineColor: OUTLINE_DEFAULT_COLOR,
+  _outlineCells: null,             // Uint8Array(target²)，签名失效即重算
+  _outlineSig: ""
 };
 
 /* 主网格分析的缓存签名。
@@ -152,11 +165,26 @@ function remapManualToRect(oldRect, newRect, target) {
   refine.manual = out;
 }
 
-/* 每格最终用色 = 包边层 > 手动覆盖层 > 自动结果（需求矛盾表第 6 条：手动改色优先） */
+/* A3 勾线派生缓存：签名 = 主网格签名 + 档位，任一变化即重算（主网格含裁剪/蒙版） */
+function ensureOutline(target) {
+  const sig = masterSig + "|" + target;
+  if (refine._outlineCells && refine._outlineSig === sig) return refine._outlineCells;
+  refine._outlineCells = computeOutlineCells(masterOk, masterW, target);
+  refine._outlineSig = sig;
+  return refine._outlineCells;
+}
+
+/* 每格最终用色 = 包边层 > 手动覆盖层 > 勾线层 > 自动结果
+   （需求矛盾表第 6 条：手动改色优先；A3：勾线低于手动、高于自动） */
 function effectiveCells(cells, target) {
   const m = refine.manual;
   const n = target * target;
   const out = new Int16Array(cells);
+  // 勾线层：只覆盖自动结果非空的格（线稿从源图主体提，蒙版外/空格区不画）
+  if (refine.outlineOn && masterOk) {
+    const oc = ensureOutline(target);
+    for (let i = 0; i < n; i++) if (oc[i] && out[i] !== EMPTY) out[i] = refine.outlineColor;
+  }
   if (m && m.length === n) {
     for (let i = 0; i < n; i++) {
       if (m[i] === EMPTY) continue;
@@ -186,7 +214,9 @@ function snapshot(target) {
     maskRect: refine._maskRect ? Object.assign({}, refine._maskRect) : null,
     edge: refine.edge,
     crop: refine.crop ? Object.assign({}, refine.crop) : null,
-    sel: refine.sel ? refine.sel.slice() : null
+    sel: refine.sel ? refine.sel.slice() : null,
+    outlineOn: refine.outlineOn,
+    outlineColor: refine.outlineColor
   };
 }
 function restore(s) {
@@ -196,6 +226,8 @@ function restore(s) {
   refine.edge = s.edge;
   refine.crop = s.crop ? Object.assign({}, s.crop) : null;
   refine.sel = s.sel ? s.sel.slice() : null;
+  refine.outlineOn = !!s.outlineOn;
+  refine.outlineColor = s.outlineColor === undefined ? OUTLINE_DEFAULT_COLOR : s.outlineColor;
 }
 function pushHistory(target) {
   hist = hist.slice(0, histPos + 1);
@@ -231,7 +263,7 @@ function updateHistUI() {
   $("redo").disabled = histPos >= hist.length - 1;
   const hasManual = !!(refine.manual && refine.manual.some(function (v) { return v !== EMPTY; }));
   const hasEdge = refine.edge !== EMPTY;
-  $("resetAll").disabled = !(hasManual || hasEdge || refine.crop);
+  $("resetAll").disabled = !(hasManual || hasEdge || refine.crop || refine.outlineOn);
   const steps = Math.max(0, histPos);
   $("histnote").textContent = "历史 " + steps + " / " + (HISTORY_MAX - 1) +
     " 步。切换规格 / 色数 / 色号间距会丢弃全部手动修改并重算，届时会先提示。";
@@ -262,6 +294,7 @@ function draftFields(kind) {
   if (kind === "matt") return ["mask", "_maskRect"];
   if (kind === "edge") return ["edge"];
   if (kind === "edit") return ["manual"];
+  if (kind === "line") return ["outlineOn", "outlineColor"];
   return [];                     // crop：草稿即 cropPendingCrop，天然隔离
 }
 function draftEnter(kind) {
@@ -330,7 +363,7 @@ function draftConfirm() {
 /* 当前是否存在「会因重算而被丢弃」的精修成果（供参数守卫共用） */
 function refineDirty() {
   const hasManual = !!(refine.manual && refine.manual.some(function (v) { return v !== EMPTY; }));
-  return hasManual || refine.edge !== EMPTY || !!refine.mask ||
+  return hasManual || refine.edge !== EMPTY || !!refine.mask || refine.outlineOn ||
     !!(draft.kind && draftChanged());
 }
 
@@ -347,6 +380,7 @@ function invalidateRefine(reason) {
   if (hasManual) what.push("逐格改色");
   if (hasEdge) what.push("包边");
   if (hasMask) what.push("抠图蒙版");
+  if (refine.outlineOn) what.push("勾线");
   if (!confirm("切换" + reason + "会重新挑选色号与重算网格，已做的" + what.join(" / ") +
     "将被丢弃。要继续吗？\n\n（选择「取消」则保留当前图纸，参数不生效）")) {
     return false;
@@ -357,6 +391,7 @@ function invalidateRefine(reason) {
   refine.mask = null; refine._maskRect = null;
   refine.sel = null;
   refine.edge = EMPTY;
+  refine.outlineOn = false;
   hist = []; histPos = -1;
   updateHistUI();
   updateEdgeSwatch();
@@ -367,7 +402,7 @@ function invalidateRefine(reason) {
    全图高斯预滤波与碎块吸收对「背景斑驳」均无可见改善，
    真正的病根是「量化放大」，解法在 2.6 的平坦区统一，且预处理还会软化细节。 */
 
-const state = { target: 78, N: 24, thr: 0.02 };
+const state = { target: 78, N: 24, thr: 0.02, dither: 0 };   // dither: A1 抖动强度 0~1，默认关（P0 基线不动）
 const tick = function () { return new Promise(function (r) { setTimeout(r, 0); }); };
 const isNarrow = function () { return window.matchMedia(NARROW).matches; };
 
@@ -488,13 +523,14 @@ async function loadFile(file) {
     $("drop").classList.add("has-file");
     $("ready").classList.add("show");
 
-    master = null; masterOk = null; masterW = null;
+    master = null; masterOk = null; masterW = null; masterImp = null;
     lastResult = null;
     // 换图等于换了一切：裁剪 / 抠图 / 包边 / 改色全部作废（它们都锚定在原图上）。
     // force 退出编辑态 —— 用户已经在文件选择器里明确换了图，无需再问一次
     draftReset();
     refine.crop = null; refine.cropPendingCrop = null;
     clearMask(); refine.edge = EMPTY;
+    refine.outlineOn = false; refine._outlineCells = null; refine._outlineSig = "";
     refine.manual = null; refine._manualT = 0;
     refine.sel = null;
     hist = []; histPos = -1;
@@ -537,6 +573,7 @@ async function run() {
       const res = analyzeMaster(imageData, workRect(), weights);
       master = res.rgb; masterW = res.weight;
       masterOk = buildMasterOk(master);
+      masterImp = masterImportance(masterOk, masterW);
       masterSig = sig;
       await tick();
       if (myToken !== runToken) return;      // 已有更新的请求在跑，本次结果作废
@@ -551,16 +588,37 @@ async function run() {
     // 它们是「不放豆的地方」，把它们算进选色样本会浪费色号去拟合背景
     const SAMPLES = 1024, stepAll = (MASTER * MASTER) / SAMPLES;
     const samples = [];
+    const sampleIdx = [];
     for (let i = 0; i < SAMPLES; i++) {
       const idx = Math.floor(i * stepAll);
       if (masterW[idx] < MASTER_EMPTY_W) continue;
       const p = idx * 3;
       samples.push([masterOk[p], masterOk[p + 1], masterOk[p + 2]]);
+      sampleIdx.push(idx);
     }
     if (!samples.length) throw new Error("这张图里没有可转换的像素（可能裁剪框或蒙版把所有内容都排除了）");
 
+    // A2 重要度加权：按梯度能量给样本配权，细节区误差 1 份顶平坦区好几份。
+    // 软封顶 e/(e+p95)：个别超高能格（纯黑白交界）不会独吞色号预算。
+    let sampleW = null;
+    if (IMP_W > 0 && masterImp) {
+      const nz = [];
+      for (let i = 0; i < masterImp.length; i++) if (masterImp[i] > 0) nz.push(masterImp[i]);
+      if (nz.length) {
+        nz.sort(function (a, b) { return a - b; });
+        const p95 = nz[Math.min(nz.length - 1, Math.floor(nz.length * 0.95))];
+        if (p95 > 0) {
+          sampleW = new Float64Array(samples.length);
+          for (let i = 0; i < samples.length; i++) {
+            const e = masterImp[sampleIdx[i]];
+            sampleW[i] = 1 + IMP_W * e / (e + p95);
+          }
+        }
+      }
+    }
+
     let curve = [];
-    const palIdx = greedyPalette(samples, poolIdx, state.N, function (c) { curve = c; });
+    const palIdx = greedyPalette(samples, poolIdx, state.N, function (c) { curve = c; }, sampleW);
     lastPoolLen = poolIdx.length;
     const t2 = performance.now();
     if (!palIdx.length) throw new Error("没有选出任何色号，请把色数调大一点");
@@ -572,10 +630,19 @@ async function run() {
 
     const srcOk = targetSourceOk(masterOk, masterW, state.target);
     const cellsRaw = downsampleByMode(idxAll, state.target, srcOk, masterW, palIdx);
-    // Step 6.5：平坦区统一 / 导向滤波 两选一，按指标自评择优（§2.9、§0.5.3）。不叠加。
-    const consist = chooseConsistency(cellsRaw, srcOk, state.target, palIdx);
-    const cells = consist.cells;
-    lastConsist = consist.detail;
+    let cells;
+    if (state.dither > 0) {
+      // A1 抖动（用户显式开启）：替代「平坦区统一 / 导向滤波」路径 —— 两者目标相反，
+      // 统一消斑驳、抖动造混色，叠加无意义；用户显式选择优先于自动择优。
+      // 空格判定沿用 cellsRaw：与主路径严格一致，空格不接收也不外发误差。
+      cells = ditherQuantize(srcOk, cellsRaw, palIdx, state.target, state.dither);
+      lastConsist = { chosen: "抖动 " + Math.round(state.dither * 100) + "%（碎块升高属预期）", unify: null, guided: null };
+    } else {
+      // Step 6.5：平坦区统一 / 导向滤波 两选一，按指标自评择优（§2.9、§0.5.3）。不叠加。
+      const consist = chooseConsistency(cellsRaw, srcOk, state.target, palIdx);
+      cells = consist.cells;
+      lastConsist = consist.detail;
+    }
     const t4 = performance.now();
 
     ensureManual(state.target);
@@ -673,9 +740,11 @@ function paint(cells, target, t0, t1, t2, t3, t4, t5, curve) {
   const eff = effectiveCells(cells, target);
   const layer = computeEdgeLayer(eff, target, refine.edge);
   const meta = render(eff, target, layer, refine.sel, ctx, { draft: draftDiffCells() });
+  const srcOk = targetSourceOk(masterOk, masterW, target);
   lastResult = {
     cells: eff, target: target, layer: layer, meta: meta, curve: curve, poolLen: lastPoolLen,
-    metrics: gridMetrics(eff, targetSourceOk(masterOk, masterW, target), target, null, layer)
+    metrics: gridMetrics(eff, srcOk, target, null, layer),
+    struct: structMetrics(srcOk, eff, PALETTE, target)
   };
   cv.hidden = false;
   $("empty").style.display = "none";
@@ -689,6 +758,7 @@ function paint(cells, target, t0, t1, t2, t3, t4, t5, curve) {
     " · 耗时 " + Math.round((t5 || performance.now()) - t0) + " ms", "done");
 
   const m = lastResult.metrics;
+  const st = lastResult.struct;
   $("stats").className = "stats show";
   $("stats").innerHTML =
     "<h4>本次结果</h4>" +
@@ -701,9 +771,13 @@ function paint(cells, target, t0, t1, t2, t3, t4, t5, curve) {
     row("最差色差", worstErr.toFixed(4)) +
     row("源色误差 p50/p90/max", m.p50.toFixed(4) + " / " + m.p90.toFixed(4) + " / " + m.max.toFixed(4)) +
     row("无意义碎块", (m.frag * 100).toFixed(2) + " %") +
-    (lastConsist ? row("空间一致性", lastConsist.chosen +
-      "（统一 p90 " + lastConsist.unify.p90.toFixed(4) + " / 滤波 p90 " + lastConsist.guided.p90.toFixed(4) +
-      "；幻影 " + (lastConsist.unify.ph * 100).toFixed(1) + "% / " + (lastConsist.guided.ph * 100).toFixed(1) + "%）") : "") +
+    (st && st.srcEdges ? row("边缘保持 / 多余", (st.edgeRecall * 100).toFixed(1) + " % / " + (st.edgeExtra * 100).toFixed(1) + " %") : "") +
+    (st && st.feats ? row("特征召回", (st.featRecall * 100).toFixed(1) + " %（" + st.feats + " 特征格）") : "") +
+    (lastConsist ? (lastConsist.unify
+      ? row("空间一致性", lastConsist.chosen +
+        "（统一 p90 " + lastConsist.unify.p90.toFixed(4) + " / 滤波 p90 " + lastConsist.guided.p90.toFixed(4) +
+        "；幻影 " + (lastConsist.unify.ph * 100).toFixed(1) + "% / " + (lastConsist.guided.ph * 100).toFixed(1) + "%）")
+      : row("量化路径", lastConsist.chosen)) : "") +
     '<div class="sep"></div><h4>耗时明细</h4>' +
     row("主网格分析", Math.round(t1 - t0) + " ms", true) +
     row("选色", Math.round(t2 - t1) + " ms", true) +

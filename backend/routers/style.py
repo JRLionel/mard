@@ -2,7 +2,8 @@
 风格化生成路由 · E8（Story 8.2）
 
 路径保持 `/style-transfer`（不加前缀，与已跑通的前端调用一致）。
-前端只发「原图 + 风格 key」，提示词由服务端内置（Story 8.1：提示词对用户不可见）。
+前端发「原图 + 风格 key」；内置风格的提示词由服务端内置（Story 8.1：对用户不可见），
+`custom`（自定义）则由用户在弹窗里输入、随请求的 `prompt` 字段送来。
 代理负责模型调用与密钥管理，密钥不下发前端。
 """
 
@@ -23,16 +24,19 @@ router = APIRouter()
 def style_transfer(
     file: UploadFile = File(..., description="原图"),
     style: str = Form("flat", description="风格 key，必须在 config.STYLE_ENABLED 内"),
-    prompt: str = Form("", description="提示词覆盖（可选，留空用内置提示词）"),
+    prompt: str = Form("", description="提示词覆盖（custom 必填，内置风格留空）"),
 ):
     """
     风格化生成：原图进、风格图出。返回 PNG 字节流。
 
-    - `style`：仅接受已开放的风格（当前只有 `flat`），其余返回 400
-    - `prompt`：可选覆盖；前端不发送，提示词默认全部由服务端内置
+    - `style`：仅接受已开放的风格（见 config.STYLE_ENABLED），其余返回 400
+    - `prompt`：内置风格留空 → 用服务端内置提示词；`custom`（自定义）必填，
+      由用户在弹窗里输入后随请求发送
     """
     if not config.is_style_enabled(style):
         raise HTTPException(status_code=400, detail=f"风格「{style}」暂未开放")
+    if style == "custom" and not prompt.strip():
+        raise HTTPException(status_code=400, detail="自定义风格需要提供提示词")
     if not config.style_transfer_ready():
         raise HTTPException(
             status_code=503,

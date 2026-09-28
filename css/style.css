@@ -161,8 +161,6 @@
   details.adv summary em{font-family:var(--mono);font-style:normal;font-size:10.5px;color:var(--faint);
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   details.adv summary:hover>span{color:var(--ink)}
-  .badge-soon{padding:2px 9px;border:1px solid var(--accent);border-radius:99px;background:var(--accent-soft);
-    color:var(--accent-deep)!important;font-weight:700;letter-spacing:.04em}
 
   /* ===================== P2 风格选择 ===================== */
   .styles{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:11px}
@@ -175,6 +173,7 @@
   .styles button .d2{background:radial-gradient(circle at 30% 30%,#E9A23B,#C8452A 70%)}
   .styles button .d3{background:linear-gradient(135deg,#2F6FB0 50%,#E9A23B 50%)}
   .styles button .d4{background:radial-gradient(circle at 60% 40%,#7FB6A4,#2E7D5B 75%)}
+  .styles button .d5{background:conic-gradient(#E9A23B 25%,#F5EFE2 0 50%,#E9A23B 0 75%,#F5EFE2 0);background-size:9px 9px}
   .styles button b{font-size:12px;font-weight:700;color:var(--ink)}
   .styles button span{font-size:10.5px;color:var(--faint);line-height:1.4}
   .styles button.on{border-color:var(--accent);background:var(--accent-soft);box-shadow:var(--sh-s)}
@@ -546,6 +545,11 @@
   .p2modal-card p b{color:var(--ink)}
   .p2modal-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
   .p2modal-acts .act{width:auto;min-width:92px;min-height:36px;padding:0 16px;font-size:12.5px}
+  /* 自定义提示词输入（customModal） */
+  .p2modal-card textarea{display:block;width:100%;box-sizing:border-box;margin-top:12px;padding:10px 11px;
+    min-height:96px;border:1px solid var(--line-strong);border-radius:10px;background:#fff;
+    font:inherit;font-size:12px;line-height:1.65;color:var(--ink);resize:vertical}
+  .p2modal-card textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 
   /* ===================== 视图模式切换 ===================== */
   .viewmodes{flex:0 0 auto;display:flex;gap:4px;padding:3px;border:1px solid var(--line);

@@ -183,9 +183,36 @@ function suppressNearDuplicates(pool, thr) {
   return kept;
 }
 
+/* 2.2b 重要度图（A2）—— 312 主网格上的梯度能量：眼睛、轮廓、纹理线所在格的
+   能量远高于平坦背景。选色时给高能格加权，让有限的色号预算优先保住细节区，
+   而不是被大面积背景吃掉（v1.4 §0.4⑦ 的「预算偏袒背景」问题）。
+   空格（masterW 过低）能量记 0：背景不提供细节。 */
+let IMP_W = 0;   // A2 实测（test.jpg 78/24）：加权 2.0/20 仅换掉 1~2 个边缘色号，
+                 // p90/featRecall/edgeRecall 均不动 —— 选色不是瓶颈（色卡密度才是）。
+                 // 机制保留、默认关；>0 时细节格权重 ∈ [1, 1+IMP_W)，软封顶 e/(e+p95)
+function masterImportance(masterOk, masterW) {
+  const e = new Float32Array(MASTER * MASTER);
+  for (let y = 1; y < MASTER - 1; y++) {
+    for (let x = 1; x < MASTER - 1; x++) {
+      const i = y * MASTER + x;
+      if (masterW[i] < MASTER_EMPTY_W) continue;
+      const tl = masterOk[(i - MASTER - 1) * 3], tt = masterOk[(i - MASTER) * 3], tr = masterOk[(i - MASTER + 1) * 3],
+            ll = masterOk[(i - 1) * 3], rr = masterOk[(i + 1) * 3],
+            bl = masterOk[(i + MASTER - 1) * 3], bb = masterOk[(i + MASTER) * 3], br = masterOk[(i + MASTER + 1) * 3];
+      const gx = (tr + 2 * rr + br) - (tl + 2 * ll + bl);
+      const gy = (bl + 2 * bb + br) - (tl + 2 * tt + tr);
+      e[i] = gx * gx + gy * gy;
+    }
+  }
+  return e;
+}
+
 /* 2.3 受限贪心加色 —— 在真实色卡集合内直接挑 N 色（不会撞色）
-   返回**全局下标**数组。 */
-function greedyPalette(samples, poolIdx, N, onCurve) {
+   返回**全局下标**数组。
+   weights（可选，A2）：每样本的重要度权重，null = 等权（旧行为）。
+   加权口径：增益与收敛曲线 RMSE 都按权重加权 —— 细节格的误差降 1 份，
+   顶平坦区的好几份。 */
+function greedyPalette(samples, poolIdx, N, onCurve, weights) {
   const chosen = [], curve = [];
   const best = new Float64Array(samples.length).fill(Infinity);
 
@@ -197,7 +224,7 @@ function greedyPalette(samples, poolIdx, N, onCurve) {
       let gain = 0;
       for (let i = 0; i < samples.length; i++) {
         const d = dEok(samples[i], co);
-        if (d < best[i]) gain += best[i] - d;
+        if (d < best[i]) gain += (weights ? weights[i] : 1) * (best[i] - d);
       }
       if (gain > bestGain) { bestGain = gain; bestG = gi; }
     }
@@ -208,9 +235,12 @@ function greedyPalette(samples, poolIdx, N, onCurve) {
       const d = dEok(samples[i], co);
       if (d < best[i]) best[i] = d;
     }
-    let s = 0;
-    for (let i = 0; i < samples.length; i++) s += best[i] * best[i];
-    curve.push(Math.sqrt(s / samples.length));
+    let s = 0, sw = 0;
+    for (let i = 0; i < samples.length; i++) {
+      const w = weights ? weights[i] : 1;
+      s += w * best[i] * best[i]; sw += w;
+    }
+    curve.push(Math.sqrt(s / Math.max(1e-9, sw)));
   }
   if (onCurve) onCurve(curve);
   return chosen;
@@ -847,6 +877,218 @@ function gridMetrics(cells, srcOk, target, pal, layer) {
     max: errs[m - 1],
     frag: fragCells / m,
     empty: 1 - m / n
+  };
+}
+
+/* ---------- A3 内部勾线层 ----------
+   DoG（高斯差分，盒式近似）在 312 主网格 L 通道上提线稿，再按目标网格
+   「线覆盖率」降采样。与包边（主体外侧一圈）互补：勾线画的是图内部的
+   轮廓与细节线（眼睛、嘴、花纹边界）。
+   空格（masterW 低）不提线；降采样用覆盖阈值而非众数 ——
+   细线在格内天然占少数，众数投票必吞（v1.3 教训），覆盖率才不会。
+   ★ 阈值必须自适应（响应分位）：油画/水彩这类素材纹理丰富，固定绝对阈值
+     会把半幅画判成线（实测 LINE_DOG_THR=0.015 时 51% 格子被盖，指标全崩）。 */
+let LINE_DOG_PCT = 0.95;    // 只取 DoG 响应最强的 top (1-PCT) 作为线（master 像素级）
+let LINE_DOG_MIN = 0.02;    // 响应下限：太平的图（素材本身没线）不强凑
+let LINE_COVER = 0.30;      // 目标格内 master 线像素占比 ≥ 此值 → 该格判为线
+                            //（实测 0.18 会把草丛纹理判成线；0.30 保住眼/耳/轮廓、压住碎纹）
+function computeOutlineCells(masterOk, masterW, target) {
+  const n = MASTER;
+  // L 通道积分图：盒式模糊 O(1)/格
+  const S = n + 1;
+  const ii = new Float64Array(S * S);
+  for (let y = 0; y < n; y++) {
+    let rowsum = 0;
+    for (let x = 0; x < n; x++) {
+      rowsum += masterOk[(y * n + x) * 3];
+      ii[(y + 1) * S + x + 1] = ii[y * S + x + 1] + rowsum;
+    }
+  }
+  function boxMean(cx, cy, r) {
+    const x0 = Math.max(0, cx - r), x1 = Math.min(n - 1, cx + r);
+    const y0 = Math.max(0, cy - r), y1 = Math.min(n - 1, cy + r);
+    const s = ii[(y1 + 1) * S + x1 + 1] - ii[y0 * S + x1 + 1] - ii[(y1 + 1) * S + x0] + ii[y0 * S + x0];
+    return s / ((x1 - x0 + 1) * (y1 - y0 + 1));
+  }
+  // DoG = 小半径均值 - 大半径均值：暗线负响应、亮线正响应，取绝对值
+  const resp = new Float32Array(n * n);
+  const sorted = [];
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const i = y * n + x;
+      if (masterW[i] < MASTER_EMPTY_W) continue;      // 空格不提线
+      const r = Math.abs(boxMean(x, y, 1) - boxMean(x, y, 2));
+      resp[i] = r;
+      sorted.push(r);
+    }
+  }
+  if (!sorted.length) return new Uint8Array(target * target);
+  sorted.sort(function (a, b) { return a - b; });
+  const thr = Math.max(LINE_DOG_MIN, sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * LINE_DOG_PCT))]);
+  const dog = new Uint8Array(n * n);
+  for (let i = 0; i < n * n; i++) if (resp[i] >= thr) dog[i] = 1;
+  // 降采样到目标网格：线覆盖率阈值
+  const step = MASTER / target;
+  const out = new Uint8Array(target * target);
+  for (let ty = 0; ty < target; ty++) {
+    const y0 = Math.round(ty * step), y1 = Math.round((ty + 1) * step);
+    for (let tx = 0; tx < target; tx++) {
+      const x0 = Math.round(tx * step), x1 = Math.round((tx + 1) * step);
+      let cnt = 0;
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) cnt += dog[y * MASTER + x];
+      if (cnt / ((y1 - y0) * (x1 - x0)) >= LINE_COVER) out[ty * target + tx] = 1;
+    }
+  }
+  return out;
+}
+
+/* ---------- A1 Riemersma 误差扩散抖动（默认关，state.dither=0 时完全不经过这里） ----------
+   沿 Hilbert 曲线遍历目标网格，把每格「调整后源色 vs 实选色号」的差值按几何衰减
+   权重摊给曲线上的后续格 —— 相邻格混色模拟中间色，渐变区不再断层。
+   选 Riemersma 而非 Floyd–Steinberg：一维曲线传播没有方向性蠕虫纹，
+   点阵更紧凑，远看更接近拼豆的「均匀颗粒」质感。
+   空格语义：不选色、不注入误差、也不消耗误差（缓冲不移位）——
+   误差沿曲线原样传给下一个非空格，与主路径的空格判定（cellsRef）严格一致。 */
+let DITHER_DEPTH = 16;    // 误差记忆长度（曲线格数）
+let DITHER_DECAY = 0.72;  // 几何衰减比：越远分摊越少
+const _hilbertCache = {};
+function hilbertSeq(n) {
+  if (_hilbertCache[n]) return _hilbertCache[n];
+  let order = 1;
+  while (order < n) order *= 2;              // 52→64，78/104→128，越界点过滤掉
+  const seq = [];
+  for (let d = 0; d < order * order; d++) {
+    let x = 0, y = 0, t = d;
+    for (let s = 1; s < order; s *= 2) {
+      const rx = Math.floor(t / 2) & 1, ry = (t ^ Math.floor(t / 2)) & 1;
+      if (ry === 0) {
+        if (rx === 1) { x = s - 1 - x; y = s - 1 - y; }
+        const tmp = x; x = y; y = tmp;
+      }
+      x += s * rx; y += s * ry;
+      t = Math.floor(t / 4);
+    }
+    if (x < n && y < n) seq.push(y * n + x);
+  }
+  _hilbertCache[n] = seq;
+  return seq;
+}
+function ditherQuantize(srcOk, cellsRef, palIdx, target, strength) {
+  const t = target, n = t * t;
+  const out = new Int16Array(n).fill(EMPTY);
+  const seq = hilbertSeq(t);
+  const w = new Float64Array(DITHER_DEPTH);
+  let wsum = 0;
+  for (let k = 0; k < DITHER_DEPTH; k++) { w[k] = Math.pow(DITHER_DECAY, k); wsum += w[k]; }
+  const buf = new Float32Array(DITHER_DEPTH * 3);
+  for (let s = 0; s < seq.length; s++) {
+    const i = seq[s];
+    if (cellsRef[i] === EMPTY) continue;    // 空格：缓冲不移位，误差传给下一个非空格
+    const q = i * 3;
+    let eL = 0, eA = 0, eB = 0;
+    for (let k = 0; k < DITHER_DEPTH; k++) {
+      eL += w[k] * buf[k * 3]; eA += w[k] * buf[k * 3 + 1]; eB += w[k] * buf[k * 3 + 2];
+    }
+    // 每份误差在后续 DEPTH 格分摊注入，总量 = strength × 误差，无累积放大
+    let L = srcOk[q] + eL * strength / wsum,
+        A = srcOk[q + 1] + eA * strength / wsum,
+        B = srcOk[q + 2] + eB * strength / wsum;
+    if (L < 0) L = 0; else if (L > 1) L = 1;   // 外推别让 L 出 OKLab 有效域
+    const bi = nearestInSet(L, A, B, palIdx);
+    out[i] = bi;
+    const p = PALETTE[bi].ok;
+    for (let k = DITHER_DEPTH - 1; k > 0; k--) {
+      buf[k * 3] = buf[(k - 1) * 3]; buf[k * 3 + 1] = buf[(k - 1) * 3 + 1]; buf[k * 3 + 2] = buf[(k - 1) * 3 + 2];
+    }
+    buf[0] = L - p[0]; buf[1] = A - p[1]; buf[2] = B - p[2];
+  }
+  return out;
+}
+
+/* ---------- A0 结构指标（边缘保持 / 特征召回） ----------
+   色彩误差（p50/p90/max）回答「颜色准不准」，这组指标回答「轮廓与细节还在不在」：
+   - edgeRecall 边缘保持度：源图强边缘格中，输出 8 邻域内也存在强边缘的比例；
+   - edgeExtra 边缘多余率：输出强边缘格中，源图 8 邻域内没有边缘的比例
+     （碎块、未来的抖动伪影会把它推高）；
+   - featRecall 特征召回率：源图「细特征格」（本格 L 与 3×3 邻域均值差异显著，
+     对应眼睛、高光、纹理线这类小结构）在输出同位置仍保持显著差异的比例 ——
+     众数投票或平坦区统一把小特征吞掉时它会下降。
+   两侧都在目标网格的 OKLab L 通道上算 Sobel，口径与色彩误差一致（对真实源色
+   srcOk，不是平滑后的目标）。空格及与空格相邻的格不参与：抠图轮廓是几何
+   决定的，不属于「识别质量」。 */
+let STRUCT_EDGE_THR = 0.06;   // Sobel 幅值阈值：阶跃边 ≈ 4×ΔL，即邻格 ΔL≈0.015 起检出
+let STRUCT_FEAT_THR = 0.08;   // 细特征：本格 L 与 3×3 邻域均值的最小差
+function structMetrics(srcOk, cells, pal, target) {
+  const t = target, n = t * t;
+  const srcL = new Float32Array(n), outL = new Float32Array(n), alive = new Uint8Array(n);
+  let nAlive = 0;
+  for (let i = 0; i < n; i++) {
+    const c = cells[i];
+    if (c === EMPTY) continue;
+    alive[i] = 1; nAlive++;
+    srcL[i] = srcOk[i * 3];
+    outL[i] = pal[c].ok[0];
+  }
+  if (nAlive < 16) return { edgeRecall: 0, edgeExtra: 0, featRecall: 0, srcEdges: 0, outEdges: 0, feats: 0 };
+  // 仅「8 邻域全部非空」的内部格参与：排除抠图/画幅边界的假边缘
+  const inner = new Uint8Array(n);
+  for (let y = 1; y < t - 1; y++) {
+    for (let x = 1; x < t - 1; x++) {
+      const i = y * t + x;
+      if (alive[i] && alive[i - 1] && alive[i + 1] && alive[i - t] && alive[i + t] &&
+          alive[i - t - 1] && alive[i - t + 1] && alive[i + t - 1] && alive[i + t + 1]) inner[i] = 1;
+    }
+  }
+  const srcEdge = new Uint8Array(n), outEdge = new Uint8Array(n);
+  let nSrc = 0, nOut = 0, nFeat = 0, featHit = 0;
+  for (let y = 1; y < t - 1; y++) {
+    for (let x = 1; x < t - 1; x++) {
+      const i = y * t + x;
+      if (!inner[i]) continue;
+      // Sobel：gx 用列差、gy 用行差，L 通道
+      const sTL = srcL[i - t - 1], sT = srcL[i - t], sTR = srcL[i - t + 1],
+            sL2 = srcL[i - 1], sR = srcL[i + 1],
+            sBL = srcL[i + t - 1], sB = srcL[i + t], sBR = srcL[i + t + 1];
+      const sgx = (sTR + 2 * sR + sBR) - (sTL + 2 * sL2 + sBL);
+      const sgy = (sBL + 2 * sB + sBR) - (sTL + 2 * sT + sTR);
+      if (Math.sqrt(sgx * sgx + sgy * sgy) >= STRUCT_EDGE_THR) { srcEdge[i] = 1; nSrc++; }
+      const oTL = outL[i - t - 1], oT = outL[i - t], oTR = outL[i - t + 1],
+            oL2 = outL[i - 1], oR = outL[i + 1],
+            oBL = outL[i + t - 1], oB = outL[i + t], oBR = outL[i + t + 1];
+      const ogx = (oTR + 2 * oR + oBR) - (oTL + 2 * oL2 + oBL);
+      const ogy = (oBL + 2 * oB + oBR) - (oTL + 2 * oT + oTR);
+      if (Math.sqrt(ogx * ogx + ogy * ogy) >= STRUCT_EDGE_THR) { outEdge[i] = 1; nOut++; }
+      // 细特征：本格与 3×3 邻域均值的 L 差（源图侧判定，输出侧复验）
+      const sMean = (sTL + sT + sTR + sL2 + sR + sBL + sB + sBR) / 8;
+      if (Math.abs(srcL[i] - sMean) >= STRUCT_FEAT_THR) {
+        nFeat++;
+        const oMean = (oTL + oT + oTR + oL2 + oR + oBL + oB + oBR) / 8;
+        if (Math.abs(outL[i] - oMean) >= STRUCT_FEAT_THR) featHit++;
+      }
+    }
+  }
+  // 边缘对应允许 1 格位移（8 邻域膨胀）：量化后边缘偏移一格不算丢失
+  let recHit = 0, extra = 0;
+  for (let y = 1; y < t - 1; y++) {
+    for (let x = 1; x < t - 1; x++) {
+      const i = y * t + x;
+      if (srcEdge[i]) {
+        if (outEdge[i - 1] || outEdge[i] || outEdge[i + 1] ||
+            outEdge[i - t - 1] || outEdge[i - t] || outEdge[i - t + 1] ||
+            outEdge[i + t - 1] || outEdge[i + t] || outEdge[i + t + 1]) recHit++;
+      }
+      if (outEdge[i]) {
+        if (!(srcEdge[i - 1] || srcEdge[i] || srcEdge[i + 1] ||
+              srcEdge[i - t - 1] || srcEdge[i - t] || srcEdge[i - t + 1] ||
+              srcEdge[i + t - 1] || srcEdge[i + t] || srcEdge[i + t + 1])) extra++;
+      }
+    }
+  }
+  return {
+    edgeRecall: nSrc ? recHit / nSrc : 1,
+    edgeExtra: nOut ? extra / nOut : 0,
+    featRecall: nFeat ? featHit / nFeat : 1,
+    srcEdges: nSrc, outEdges: nOut, feats: nFeat
   };
 }
 

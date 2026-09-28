@@ -5,7 +5,7 @@ function setMode(mode, force) {
   // 切回 none（再点同一工具 / 点取消）不问 —— 需求 §2.5.2 C 把它定义为「等同于取消」。
   if (!force && mode !== refine.mode && refine.mode !== "none" &&
     draft.kind === refine.mode && draftChanged()) {
-    const what = { crop: "裁剪框调整", matt: "笔刷修正", edge: "包边选择", edit: "改色" }[refine.mode] || "修改";
+    const what = { crop: "裁剪框调整", matt: "笔刷修正", edge: "包边选择", edit: "改色", line: "勾线选择" }[refine.mode] || "修改";
     if (!confirm("当前" + what + "尚未确认，切换将放弃这些修改。要继续吗？")) return;
     if (refine.mode !== "crop" && draft.base) {
       for (const k of draftFields(refine.mode)) refine[k] = draft.base[k];
@@ -19,6 +19,7 @@ function setMode(mode, force) {
   refine.mode = mode;
   const wantCrop = mode === "crop", wantMatt = mode === "matt";
   const wantEdit = mode === "edit", wantEdge = mode === "edge";
+  const wantLine = mode === "line";
 
   Array.prototype.forEach.call($("tools").children, function (b) {
     const on = b.dataset.tool === mode;
@@ -29,6 +30,7 @@ function setMode(mode, force) {
   $("p-matt").classList.toggle("show", wantMatt);
   $("p-edge").classList.toggle("show", wantEdge);
   $("p-edit").classList.toggle("show", wantEdit);
+  $("p-line").classList.toggle("show", wantLine);
 
   // 「改色」不需要把画布换成原图——它作用在已渲染的网格图上，
   // 继续用 #cv 才能让用户看清色号（这也是 Story 7.1 交互的地基）
@@ -50,9 +52,9 @@ function setMode(mode, force) {
       buildEditBar();
     });
   } else {
-    // 改色/包边不需要 overlay 视图，但编辑条（取消/确认）照常显示 ——
+    // 改色/包边/勾线不需要 overlay 视图，但编辑条（取消/确认）照常显示 ——
     // 没有出口的编辑态是 v1.2 的核心缺陷（需求 §2.5.1 规则 1：进入必有出口）
-    if (wantEdit || wantEdge) { buildEditBar(); }
+    if (wantEdit || wantEdge || wantLine) { buildEditBar(); }
     else { editbar.style.display = "none"; }
     if (wantEdit && refine.sel) repaintWithSel();
   }

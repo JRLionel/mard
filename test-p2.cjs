@@ -55,11 +55,14 @@ function group(t) { console.log('\n── ' + t + ' ──'); }
     feEnabled.length > 0 && JSON.stringify(feEnabled) === JSON.stringify(beEnabled),
     '前端[' + feEnabled + '] vs 后端[' + beEnabled + ']');
 
-  // 1.2 未实现的三种风格置灰 + 「即将上线」
+  // 1.2 现开放 flat / pixel / bead / custom 四种；oil、water 已下线
   const disabledBtns = btns.filter(b => b.disabled);
-  check('2.1b', '仅开放 flat，其余三种置灰并标「即将上线」',
-    feEnabled.length === 1 && feEnabled[0] === 'flat' && disabledBtns.length === 3 &&
-    /即将上线/.test(html), '可点 ' + feEnabled.length + ' / 置灰 ' + disabledBtns.length);
+  check('2.1b', '开放 flat + pixel + bead + 自定义四种，无置灰按钮（oil / water 已移除）',
+    feEnabled.length === 4 && ['bead', 'custom', 'flat', 'pixel'].every(k => feEnabled.includes(k)) &&
+    disabledBtns.length === 0 &&
+    !/data-s="oil"/.test(html) && !/data-s="water"/.test(html) &&
+    !/即将上线/.test(html) && /自定义/.test(html),
+    '可点 ' + feEnabled.length + ' / 置灰 ' + disabledBtns.length);
 
   // 1.3 flat 内置提示词为用户指定的 chibi 文案（关键约束不得丢），且不暴露给前端
   check('2.1c', 'flat 提示词保留用户要求的关键约束（chibi / 6-8 色 / 不混色 / 纯白底）且不暴露给前端',
@@ -71,11 +74,22 @@ function group(t) { console.log('\n── ' + t + ' ──'); }
   //   4 次采样里 1 次直接吐出 3×3 九宫格（用户报障的那个现象）。
   const apiPy = fs.readFileSync(path.join(ROOT, 'backend/services/aliyun_api.py'), 'utf8');
   const flatPrompt = (cfg.match(/"flat":\s*\(([\s\S]*?)\)/) || [, ''])[1];
-  check('2.1d', '提示词不含多格暗示词（表情包 / 九宫格 / 拼图…）',
-    !/表情包|九宫格|四宫格|拼贴|拼图|分镜/.test(flatPrompt),
-    flatPrompt.replace(/\s+/g, ' ').slice(0, 40) + '…');
-  check('2.1e', '提示词显式约束「只画一个主体 / 单一完整画面」',
+  const pixelPrompt = (cfg.match(/"pixel":\s*\(([\s\S]*?)\)/) || [, ''])[1];
+  const beadPrompt = (cfg.match(/"bead":\s*\(([\s\S]*?)\)/) || [, ''])[1];
+  const multiWord = /表情包|九宫格|四宫格|拼贴|拼图|分镜/;
+  check('2.1d', '内置提示词不含多格暗示词（表情包 / 九宫格 / 拼图…）',
+    [flatPrompt, pixelPrompt, beadPrompt].every(p => !multiWord.test(p)),
+    'bead: ' + beadPrompt.replace(/\s+/g, ' ').slice(0, 40) + '…');
+  check('2.1e', 'flat 提示词仍显式约束「只画一个主体 / 单一完整画面」',
     /只画一个主体/.test(flatPrompt) && /单一完整画面/.test(flatPrompt));
+  check('2.1e2', 'pixel / bead 为用户指定的新文案（像素 / 纯白底 / 6-8 色）',
+    /像素/.test(pixelPrompt) && /拼豆风格/.test(pixelPrompt) &&
+    /像素/.test(beadPrompt) && /纯白/.test(beadPrompt) && /6\s*至\s*8/.test(beadPrompt),
+    'bead: ' + beadPrompt.replace(/\s+/g, ' ').slice(0, 46) + '…');
+  check('2.1h', 'custom 无内置提示词、由用户输入：后端要求 prompt，前端弹窗收集并随请求发送',
+    /style == "custom"/.test(styleRouter) && /自定义风格需要提供提示词/.test(styleRouter) &&
+    /customModal/.test(html) && /askCustomPrompt/.test(styleJs) &&
+    /fd\.append\("prompt"/.test(styleJs));
   check('2.1f', '负向提示词已配置且含多格 / 多主体拦截词',
     /STYLE_NEGATIVE_PROMPTS/.test(cfg) && /多格/.test(cfg) && /多个角色/.test(cfg) &&
     /negative_prompt/.test(apiPy));
@@ -165,7 +179,7 @@ function group(t) { console.log('\n── ' + t + ' ──'); }
   const visible = async (id) => !(await hidden(id));
 
   /* 风格化请求的确定性替身 */
-  let reqCount = 0, routeDelay = 0, routeStatus = 200, lastStyleUrl = '';
+  let reqCount = 0, routeDelay = 0, routeStatus = 200, lastStyleUrl = '', lastBody = '';
   const makePng = async () => {
     const b64 = await ev(() => {
       const c = document.createElement('canvas'); c.width = 256; c.height = 256;
@@ -184,6 +198,10 @@ function group(t) { console.log('\n── ' + t + ' ──'); }
   await page.route('**/style-transfer*', async route => {
     reqCount++;
     lastStyleUrl = route.request().url();
+    try {
+      const buf = route.request().postDataBuffer();
+      lastBody = buf ? buf.toString('utf8') : '';
+    } catch (e) { lastBody = ''; }
     if (routeDelay) await new Promise(r => setTimeout(r, routeDelay));
     if (routeStatus !== 200) {
       return route.fulfill({
@@ -437,7 +455,45 @@ function group(t) { console.log('\n── ' + t + ' ──'); }
   await page.waitForTimeout(250);
   check('4.5', '可切回单视图', await hidden('compare') && await visible('stage'));
 
-  /* ════════ ⑤ 红线：服务不可用 ════════ */
+  /* ════════ ⑤ 自定义风格（弹窗输入提示词） ════════ */
+  group('自定义风格（弹窗 / 提示词随请求发送 / 取消不改选中）');
+
+  const customOn = () => ev(() => document.querySelector('#p2styles button[data-s="custom"]').classList.contains('on'));
+
+  reqCount = 0;
+  await page.click('#p2styles button[data-s="custom"]');
+  await page.waitForTimeout(250);
+  check('6.1', '点「自定义」弹出提示词输入模态，弹窗打开时不发请求',
+    await visible('customModal') && reqCount === 0);
+
+  await page.click('#cmCancel');
+  await page.waitForTimeout(200);
+  check('6.2', '取消：模态关闭、不生成、不改选中态',
+    await hidden('customModal') && reqCount === 0 && !(await customOn()));
+
+  await page.click('#p2styles button[data-s="custom"]');
+  await page.waitForTimeout(150);
+  await page.fill('#cmPrompt', '   ');        // 纯空白 = 空提示词
+  await page.click('#cmOk');
+  await page.waitForTimeout(200);
+  check('6.3', '提示词为空（含纯空白）时不生成、不改选中态',
+    await hidden('customModal') && reqCount === 0 && !(await customOn()));
+
+  const respP = page.waitForResponse(r => /style-transfer/.test(r.url()), { timeout: 15000 });
+  await page.click('#p2styles button[data-s="custom"]');
+  await page.waitForTimeout(150);
+  await page.fill('#cmPrompt', '水彩绘本风测试标记MARDXYZ');
+  await page.click('#cmOk');
+  await respP;
+  await page.waitForFunction(() => document.getElementById('p2badge').textContent === '自定义', null, { timeout: 8000 }).catch(() => { });
+  check('6.4', '确认后直接生成：请求体带 style=custom 与用户提示词',
+    reqCount === 1 && /name="style"/.test(lastBody) && /custom/.test(lastBody) &&
+    /name="prompt"/.test(lastBody) && /MARDXYZ/.test(lastBody),
+    'req=' + reqCount + ' 带提示词=' + /MARDXYZ/.test(lastBody));
+  check('6.5', '生成后预览标签为「自定义」且按钮保持选中',
+    await ev(() => document.getElementById('p2badge').textContent) === '自定义' && await customOn());
+
+  /* ════════ ⑥ 红线：服务不可用 ════════ */
   group('红线（风格化服务不可用不阻塞基础功能）');
 
   routeStatus = 503;
