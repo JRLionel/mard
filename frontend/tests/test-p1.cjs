@@ -2,9 +2,9 @@
  * P1 全功能验收套件 v2 —— 按 需求.md v1.3（含 §2.5 交互与生命周期）逐条验收。
  *
  * 跑法：
- *   1) 先起后端：cd backend && python3 app.py
- *   2) export PATH="/Users/zuorongkun/.workbuddy/binaries/node/versions/22.22.2-3/bin:$PATH"
- *      node test-p1.cjs
+ *   1) 起前端静态服务：cd frontend && npm start   （默认 http://127.0.0.1:3000，MARD_FRONTEND_URL 可覆盖）
+ *   2) 起后端：cd backend && python3 app.py       （端口 8000）
+ *   3) node frontend/tests/test-p1.cjs
  *
  * 覆盖分七组：
  *   ① 坐标系契约（§2.5.3）：合成图断言蒙版↔图纸↔底图对齐、裁剪真正生效、不相交裁剪
@@ -25,8 +25,8 @@
  */
 const PW = '/Users/zuorongkun/.npm-global/lib/node_modules/@playwright/cli/node_modules/playwright-core/index.js';
 const EXE = '/Users/zuorongkun/Library/Caches/ms-playwright/chromium-1148/chrome-mac/Chromium.app/Contents/MacOS/Chromium';
-const HTML = 'file:///Volumes/samsungt7/code/mard/拼豆转换器.html';
-const TESTJPG = process.env.MARD_TEST_IMG || '/Volumes/samsungt7/code/mard/test/test.jpg';
+const HTML = process.env.MARD_FRONTEND_URL || 'http://127.0.0.1:3000/';
+const TESTJPG = process.env.MARD_TEST_IMG || require('path').resolve(__dirname, '../../test/test.jpg');
 const fs = require('fs');
 
 const results = [];
@@ -558,7 +558,7 @@ function check(id, desc, ok, detail) {
   });
   check('3.2a', '连续切参以最新为准（代次守卫）', deb.delta >= 1 && deb.finalN === 24, 'runToken +' + deb.delta);
   // 换图清空精修
-  await page.setInputFiles('#file', '/Volumes/samsungt7/code/mard/test/IMG_5051.JPG');
+  await page.setInputFiles('#file', require('path').resolve(__dirname, '../../test/IMG_5051.JPG'));
   await page.waitForFunction(() => document.getElementById('info').textContent.includes('IMG_5051'), null, { timeout: 30000 });
   await settle();
   const newImg = await ev(() => ({ m: window.MARD_SELFEVAL(), crop: refine.crop, mask: !!refine.mask, edge: refine.edge }));

@@ -3,8 +3,8 @@
  * openspec/changes/p2-style-transfer-refactor 的 spec 逐条验收。
  *
  * 跑法：
- *   export PATH="/Users/zuorongkun/.workbuddy/binaries/node/versions/22.22.2-3/bin:$PATH"
- *   node test-p2.cjs
+ *   1) 起前端静态服务：cd frontend && npm start   （默认 http://127.0.0.1:3000，MARD_FRONTEND_URL 可覆盖）
+ *   2) node frontend/tests/test-p2.cjs
  *
  * 分五组：
  *   ① 静态契约：风格 key 前后端同步链 / 脚本加载顺序 / init 无业务逻辑 / 后端三层结构
@@ -19,11 +19,12 @@
  */
 const PW = '/Users/zuorongkun/.npm-global/lib/node_modules/@playwright/cli/node_modules/playwright-core/index.js';
 const EXE = '/Users/zuorongkun/Library/Caches/ms-playwright/chromium-1148/chrome-mac/Chromium.app/Contents/MacOS/Chromium';
-const ROOT = '/Volumes/samsungt7/code/mard';
-const HTML = 'file://' + ROOT + '/拼豆转换器.html';
-const IMG = ROOT + '/test/111.png';          // 503×503，替代已缺失的验收样例 test.jpg
 const fs = require('fs');
 const path = require('path');
+const FE = path.resolve(__dirname, '..');    // frontend/（index.html、js/、css/）
+const ROOT = path.resolve(FE, '..');         // 仓库根（backend/、test/、AGENTS.md）
+const HTML = process.env.MARD_FRONTEND_URL || 'http://127.0.0.1:3000/';
+const IMG = path.join(ROOT, 'test', '111.png');   // 503×503，替代已缺失的验收样例 test.jpg
 
 const results = [];
 function check(id, desc, ok, detail) {
@@ -37,10 +38,10 @@ function group(t) { console.log('\n── ' + t + ' ──'); }
   group('静态契约（前后端同步链 / 结构）');
 
   const cfg = fs.readFileSync(path.join(ROOT, 'backend/config.py'), 'utf8');
-  const html = fs.readFileSync(path.join(ROOT, '拼豆转换器.html'), 'utf8');
-  const initJs = fs.readFileSync(path.join(ROOT, 'js/init.js'), 'utf8');
-  const styleJs = fs.readFileSync(path.join(ROOT, 'js/p2-style.js'), 'utf8');
-  const compareJs = fs.readFileSync(path.join(ROOT, 'js/p2-compare.js'), 'utf8');
+  const html = fs.readFileSync(path.join(FE, 'index.html'), 'utf8');
+  const initJs = fs.readFileSync(path.join(FE, 'js', 'init.js'), 'utf8');
+  const styleJs = fs.readFileSync(path.join(FE, 'js', 'p2-style.js'), 'utf8');
+  const compareJs = fs.readFileSync(path.join(FE, 'js', 'p2-compare.js'), 'utf8');
   const styleRouter = fs.readFileSync(path.join(ROOT, 'backend/routers/style.py'), 'utf8');
 
   // 1.1 风格 key 同步链：HTML 未 disabled 的 data-s == config.STYLE_ENABLED

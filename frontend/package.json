@@ -1,0 +1,9 @@
+{
+  "name": "mard-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "拼豆图纸转换器前端 —— 纯静态、零构建、零 npm 依赖，Node 仅用于托管",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

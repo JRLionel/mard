@@ -35,9 +35,9 @@ API_TIMEOUT = 30                  # 单次 HTTP（生成请求之外的下载等
 STYLE_PROMPT_EXTEND = False
 
 # ---------- 风格提示词（对用户不可见，需求 Story 8.1） ----------
-# ⚠️ 同步链：内置风格的 key 必须与 拼豆转换器.html 中对应按钮的 data-s 属性一致；
+# ⚠️ 同步链：内置风格的 key 必须与 frontend/index.html 中对应按钮的 data-s 属性一致；
 #    唯一的例外是 `custom`（自定义）——它不在本字典里，提示词由用户在弹窗里输入后随请求发送。
-#    改风格列表时三处同改（HTML 的 data-s / 本字典 / STYLE_ENABLED），改完跑 test-p2.cjs。
+#    改风格列表时三处同改（HTML 的 data-s / 本字典 / STYLE_ENABLED），改完跑 frontend/tests/test-p2.cjs。
 #
 # ★ 提示词红线（2026-09 实测踩坑）：**不要出现「表情包」这类多格暗示词**。
 #   原始提示词写的是「chibi 画风表情包」，模型把它理解成「一整版多格表情贴纸包」，

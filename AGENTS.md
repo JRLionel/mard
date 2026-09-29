@@ -1,6 +1,6 @@
 # AGENTS.md — mard 工作区说明
 
-拼豆（perler bead）图片转图纸工具。**P0 为纯前端、零构建**：转换链路是原生 JS，入口 `拼豆转换器.html` + `css/style.css` + `js/` 下按功能域拆分的经典 `<script>` 文件（无 ES Module——file:// 下被 CORS 拦截，无构建工具），双击浏览器即用。**JS 文件按加载顺序**：palette → algorithm → render → state → ui-core → refine-crop → refine-cutout → refine-edit → p2-style → p2-compare → init（顺序不能乱，init 必须最后）。**P1 已落地**：新增裁剪 / 抠图 / 包边 / 逐格改色四项精修，其中**只有抠图走后端**（`backend/`，确定性 CV，不是生成式模型；依据见技术方案 §0.5.5），其余三项都是前端纯数组运算。**P2 已落地**：扁平插画风（flat）风格化生成——后端代理调用图像生成模型，前端以**输入源会话模型**接入（见下文红线）。
+拼豆（perler bead）图片转图纸工具。**P0 为纯前端、零构建**：转换链路是原生 JS，**全部前端文件收拢在 `frontend/`**（入口 `frontend/index.html` + `frontend/css/style.css` + `frontend/js/` 下按功能域拆分的经典 `<script>` 文件，无 ES Module、无构建工具），用**零依赖 Node 静态服务**运行：`cd frontend && npm start` → http://127.0.0.1:3000（`frontend/server.js`，无任何 npm 依赖；file:// 直接打开 index.html 也仍可用）。**JS 文件按加载顺序**：palette → algorithm → render → state → ui-core → refine-crop → refine-cutout → refine-edit → p2-style → p2-compare → init（顺序不能乱，init 必须最后）。**P1 已落地**：新增裁剪 / 抠图 / 包边 / 逐格改色四项精修，其中**只有抠图走后端**（`backend/`，确定性 CV，不是生成式模型；依据见技术方案 §0.5.5），其余三项都是前端纯数组运算。**P2 已落地**：扁平插画风（flat）风格化生成——后端代理调用图像生成模型，前端以**输入源会话模型**接入（见下文红线）。
 
 > **红线仍在**：P0 的验收基线不得依赖任何网络请求。抠图服务连不上时，裁剪、包边、改色、导出必须全部照常可用；**风格化服务连不上时同理**（上传/转换/精修/导出全部照常）。
 >
@@ -10,19 +10,21 @@
 
 | 文件 | 作用 |
 |---|---|
-| `拼豆转换器.html` | **前端入口**。纯 HTML 骨架（约 270 行）+ `<link>` 引样式 + 按依赖序引 9 个 JS。改 UI 结构在这里 |
-| `css/style.css` | 全部样式：设计令牌（`:root`）、布局、精修工具条、响应式（18 个分节注释） |
-| `js/palette.js` | `PALETTE_RAW` 色卡数据 + OKLab 色彩空间（`rgbToOklab` / `dEok`）。改色卡同步链的第一落点 |
-| `js/algorithm.js` | 量化核心：`workRect` / `analyzeMaster` / `downsampleByMode` / `unifyFlatRegions` / 引导滤波 / 择优 / `computeEdgeLayer` / `gridMetrics` |
-| `js/render.js` | 渲染：A 网格图纸 + B 色卡集合版 + 用量清单 + 包边自测 |
-| `js/state.js` | 全局状态与流水线：`runToken` / `refine` / 蒙版存取 / manual 覆盖层 / `effectiveCells` / 历史栈 / draft 生命周期 / `drawState` |
-| `js/ui-core.js` | 上传（点击/拖拽/粘贴）+ 参数控件绑定 |
-| `js/refine-crop.js` | 精修 6.1-6.3：模式切换 / 视口缩放平移 / 裁剪 |
-| `js/refine-cutout.js` | 精修 6.4：抠图（`CUTOUT_URL`、fetch 后端、笔刷、蒙版叠加） |
-| `js/refine-edit.js` | 精修 6.5-6.7：包边 / 逐格改色 / Esc 守卫 / 编辑条 |
-| `js/p2-style.js` | **P2 风格化生成**（需求 E8）：风格选择 / 隐私同意模态 / 阶段进度 / **输入源会话模型**（原图与风格图各一套 `{imageData, refine, hist, lastResult}`）/ 代次守卫 / 回退 |
-| `js/p2-compare.js` | **P2 对比视图**：原图图纸 vs 风格化图纸分屏（窄屏上下堆叠）/ 同步滚动 / 参数过期就地标记 / 导出并排对比图 |
-| `js/init.js` | 5.4 视口变化 + 5.5 初始化 + 5.6 P2 模块装配。**必须最后加载**，且**只做装配，不写业务逻辑** |
+| `frontend/index.html` | **前端入口**（原 `拼豆转换器.html`）。纯 HTML 骨架 + `<link>` 引样式 + 按依赖序引 11 个 JS。改 UI 结构在这里 |
+| `frontend/css/style.css` | 全部样式：设计令牌（`:root`）、布局、精修工具条、响应式（18 个分节注释） |
+| `frontend/js/palette.js` | `PALETTE_RAW` 色卡数据 + OKLab 色彩空间（`rgbToOklab` / `dEok`）。改色卡同步链的第一落点 |
+| `frontend/js/algorithm.js` | 量化核心：`workRect` / `analyzeMaster` / `downsampleByMode` / `unifyFlatRegions` / 引导滤波 / 择优 / `computeEdgeLayer` / `gridMetrics` |
+| `frontend/js/render.js` | 渲染：A 网格图纸 + B 色卡集合版 + 用量清单 + 包边自测 |
+| `frontend/js/state.js` | 全局状态与流水线：`runToken` / `refine` / 蒙版存取 / manual 覆盖层 / `effectiveCells` / 历史栈 / draft 生命周期 / `drawState` |
+| `frontend/js/ui-core.js` | 上传（点击/拖拽/粘贴）+ 参数控件绑定 |
+| `frontend/js/refine-crop.js` | 精修 6.1-6.3：模式切换 / 视口缩放平移 / 裁剪 |
+| `frontend/js/refine-cutout.js` | 精修 6.4：抠图（`CUTOUT_URL`、fetch 后端、笔刷、蒙版叠加） |
+| `frontend/js/refine-edit.js` | 精修 6.5-6.7：包边 / 逐格改色 / Esc 守卫 / 编辑条 |
+| `frontend/js/p2-style.js` | **P2 风格化生成**（需求 E8）：风格选择 / 隐私同意模态 / 阶段进度 / **输入源会话模型**（原图与风格图各一套 `{imageData, refine, hist, lastResult}`）/ 代次守卫 / 回退 |
+| `frontend/js/p2-compare.js` | **P2 对比视图**：原图图纸 vs 风格化图纸分屏（窄屏上下堆叠）/ 同步滚动 / 参数过期就地标记 / 导出并排对比图 |
+| `frontend/js/init.js` | 5.4 视口变化 + 5.5 初始化 + 5.6 P2 模块装配。**必须最后加载**，且**只做装配，不写业务逻辑** |
+| `frontend/server.js` | **零依赖 Node 静态服务**（`node:http`，无任何 npm 包）：托管 `frontend/`，默认 127.0.0.1:3000（`PORT`/`HOST` 可覆盖），no-store 防旧缓存，防目录穿越 |
+| `frontend/package.json` | 仅有 `npm start` 一个脚本（= `node server.js`）。**不引入任何依赖**——P0 零网络基线与「零构建」决策都不动摇 |
 | `backend/cutout.py` | **确定性 CV 抠图引擎**。改之前必读文件顶部注释：`cv2.grabCut` 实测不可复现，已弃用 |
 | `backend/config.py` | **配置唯一入口**：密钥 / 超时 / 图片限制 / 风格提示词（`STYLE_PROMPTS`、`STYLE_ENABLED`）。改风格列表只改这里 + HTML 的 `data-s` |
 | `backend/services/aliyun_api.py` | 阿里云百炼（千问-图像生成与编辑 3.0）调用封装：编码 / 图生图 / 下载，带 HTTP 语义的 `AliyunError` |
@@ -31,13 +33,13 @@
 | `backend/app.py` | FastAPI 装配层：实例化 + CORS + 路由注册 + `/health`。**不写业务逻辑** |
 | `backend/test_cutout.py` | 11 项回归测试。`TestDeterminism` 是确定性契约的护栏，必须保持绿色 |
 | `backend/README.md` | 后端启动方式、接口、隐私边界、素材实测数据 |
-| `test-p1.cjs` | P1 全功能验收套件（51 项），playwright 驱动。改前端后跑一遍 |
-| `test-p2.cjs` | **P2 验收套件**（风格化生成 / 会话模型 / 对比视图 / 红线），playwright 驱动。风格化请求被 route 拦截返回合成 PNG，不打真实模型；真实链路由 `backend/test_cutout.py` 与端到端手测覆盖 |
+| `frontend/tests/test-p1.cjs` | P1 全功能验收套件（50 项），playwright 驱动。改前端后跑一遍 |
+| `frontend/tests/test-p2.cjs` | **P2 验收套件**（风格化生成 / 会话模型 / 对比视图 / 红线），playwright 驱动。风格化请求被 route 拦截返回合成 PNG，不打真实模型；真实链路由 `backend/test_cutout.py` 与端到端手测覆盖 |
 | `code.md` | **MARD 221 色卡，唯一色值来源（已锁定的决策 D3）**。`| 色号 | HEX | RGB |` 三列表格 |
 | `拼豆图片转换工具-技术方案.md` | 技术方案 **v1.6**（含 §0.3 v1.2 返修、§0.4 v1.3 优化、§0.5 v1.4 架构评审、§0.6 P1 实现、§0.7 v1.6「轮廓与特征」专项）。**改算法前必读 §0.3 与 §0.4；质疑「要不要上 AI 模型」前必读 §0.5；改抖动/勾线/加权选色前必读 §0.7** |
 | `需求.md` | 需求文档（敏捷版 v1.2），Epic/Story/验收标准，P0/P1/P2 分期 |
 | `palette-audit.py` | 色卡数据审计脚本（OKLab 近重复色检测）。`python3 palette-audit.py code.md` |
-| `test.jpg` | 1818×1818 验收样例图（橘猫油画）。验收标准：78×78 / 24 色出图人工确认 |
+| `test.jpg` → 已移至 `test/test.jpg` | 1818×1818 验收样例图（橘猫油画）。验收标准：78×78 / 24 色出图人工确认 |
 | `.workbuddy/` | 工作记忆，勿改动 |
 
 ## 修改色卡数据时的同步链
@@ -45,7 +47,7 @@
 色卡在两处硬编码，必须同步修改，缺一即静默出错：
 
 1. `code.md`（数据源）
-2. `js/palette.js` 中的 `PALETTE_RAW` 常量（`色号:HEX,色号:HEX,...` 逗号分隔串，无 `#` 前缀）。**每个 js 文件顶部都有独立的 `"use strict";`，新增文件别忘了带**
+2. `frontend/js/palette.js` 中的 `PALETTE_RAW` 常量（`色号:HEX,色号:HEX,...` 逗号分隔串，无 `#` 前缀）。**每个 js 文件顶部都有独立的 `"use strict";`，新增文件别忘了带**
 
 改完跑 `python3 palette-audit.py code.md`，对比技术方案附录 A 的近重复色指标确认无回归。
 
@@ -82,14 +84,14 @@
 3. 回归护栏：三档规格（52/78/104）都不许出现全黑格（白变黑事故的回归信号）。
 4. **先确认瓶颈在哪一类问题**（抠图 / 量化放大 / 色卡上限），再决定加机制还是换模型。v1.4 的教训：拿 `test/` 下 6 张真实素材扫过才发现，精度已被**色卡密度**锁死（N=24→48，p90 只从 0.0488 降到 0.0481），此时再上更强的识别模型毫无收益。详见技术方案 §0.5.4。
 5. **误差评估必须对真实源色（`srcOk`）算，不能对平滑/滤波后的目标算**——否则等于用目标考核结果，指标虚好（§0.5.3 口径注意）。
-6. **P1 改动后跑验收套件**：`node test-p1.cjs`（51 项，需先起后端）+ `cd backend && python3 test_cutout.py`（11 项）。渲染类改动还要做像素核对——空格应为斜纹底 `#FBFAF7` 而非任何豆色，包边色应精确等于所选色号，包边连通块数应为 1（闭合）。
+6. **P1 改动后跑验收套件**：`node frontend/tests/test-p1.cjs`（50 项，需先起前端服务 `cd frontend && npm start` 与后端 `cd backend && python3 app.py`）+ `cd backend && python3 test_cutout.py`（11 项）。渲染类改动还要做像素核对——空格应为斜纹底 `#FBFAF7` 而非任何豆色，包边色应精确等于所选色号，包边连通块数应为 1（闭合）。
 
 ## 调试陷阱（都实际踩过，浪费过大量时间）
 
 - **`cells` 是调色板下标，不是颜色**。跨版本/跨页面比 `cells` 数组无意义——不同版本的调色板不同，同一指数指向不同颜色。要对比必须各自在自己页面内、用自己的 `pal` 自评。
 - **`const` 声明的阈值无法用 `window.X = v` 覆盖**（JS 里 `window.X` 是另一个属性）。曾因此让「开关对比」变成同一配置自己比自己，得出过完全错误的结论。可调阈值一律用 `let`。
 - **页面里 canvas 每格中心画着色号文字**：写脚本抽样核对渲染结果时，取样点要避开中心（取格内左上角），否则量到的是文字像素，误差会虚高一个数量级。
-- 浏览器自检时用本地 HTTP 服务（`python3 -m http.server`）；IAB 禁止 `file:` 且不支持文件上传，需把图片以 base64 内联进自检页。
+- 浏览器自检时用前端自带服务（`cd frontend && npm start`，零依赖 Node 静态服务）；IAB 禁止 `file:` 且不支持文件上传，需把图片以 base64 内联进自检页。
 - **`let` 的暂时性死区会造成「静默失效」**：`masterSig` 曾声明在 `run()` 定义之后，而 `run()` 里先对它赋值 → 赋值永不生效 → 主网格永不重算 → 所有算法改动看起来「完全不生效」。查这类问题的第一反应应该是「新增的缓存/标志变量是不是声明晚了」。
 - **同一数组既读又写的合并循环极易出静默错**：`downsampleByMode` 曾把「找众数」和「清账」写进一个循环，清账提前抹平计数，导致「源色候选」分支候选集为空、悄悄退化成纯众数，`max` 误差从 0.2969 涨到 0.3681 而功能看起来完全正常。读和写要分两个循环。
 - **`setPointerCapture` 会抛异常**（合成事件、部分触屏/笔设备）。它只是「拖出元素仍收事件」的优化，必须 try/catch——一抛就中断 `pointerdown` 后续赋值，笔刷表现为「怎么涂都没反应」。
@@ -153,15 +155,15 @@
   **不得用相对路径**——file:// 下相对路径指向本地文件系统，请求必然失败。
 - **长异步必须双重守卫**：`p2-style.js` 的 `stale()` 同时核对**代次**与**输入源身份**
   （`imageData !== srcAt`）。只核对代次拦不住「生成期间用户换图」。
-- **风格 key 是同步链**：`拼豆转换器.html` 的 `data-s` ↔ `backend/config.py` 的 `STYLE_PROMPTS` /
-  `STYLE_ENABLED`。加风格时两处同改，改完跑 `node test-p2.cjs` 的「风格 key 同步链」用例。
+- **风格 key 是同步链**：`frontend/index.html` 的 `data-s` ↔ `backend/config.py` 的 `STYLE_PROMPTS` /
+  `STYLE_ENABLED`。加风格时两处同改，改完跑 `node frontend/tests/test-p2.cjs` 的「风格 key 同步链」用例。
   例外是 `custom`：它只出现在 `data-s` 与 `STYLE_ENABLED` 里，无内置提示词（用户弹窗输入）。
 - **★ 提示词不得含「多格暗示词」**：`表情包` / `九宫格` / `四宫格` / `拼图` / `拼贴` / `分镜`
   都会让模型把「表情包」理解成**一整版多格贴纸包**。实测原始提示词的「chibi 画风表情包」
   在 4 次采样里 1 次直接吐出 3×3 九宫格（9 个姿势拼一张图，实测见 `test/222.png` 的记录）。
   提示词必须显式写「**整幅画面只画一个主体**」「**单一完整画面**」，并配 `STYLE_NEGATIVE_PROMPTS`
   把多格/多主体堵死。同理「互不遮挡」也在暗示存在多个主体——要写「主体完整不被裁切」。
-  `test-p2.cjs` 的 2.1d~2.1f 是这条的护栏。
+  `frontend/tests/test-p2.cjs` 的 2.1d~2.1f 是这条的护栏。
 
 **P2 的提示词与性能取舍（实测数据，改前先看）**：
 
